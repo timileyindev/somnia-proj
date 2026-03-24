@@ -22,9 +22,14 @@ export type StandardSubscriptionSummary = {
   createdAt: string;
   handlerContractAddress: `0x${string}`;
   subscriptions: {
-    healthSignalTx: `0x${string}`;
-    metricSignalTx: `0x${string}`;
+    /**
+     * All logs from `mockSignalEmitter` (HealthSignal, MetricSignal, any future events).
+     * Implemented by omitting `eventTopics` in `createSoliditySubscription` so the SDK pads
+     * `bytes32[4]` with zeros = per-topic wildcards on the precompile.
+     */
+    mockSignalEmitterTx: `0x${string}`;
     blockTickTx: `0x${string}`;
+    epochTickTx: `0x${string}`;
     scheduleTx: `0x${string}`;
     scheduleTimestamp: number;
   };

@@ -61,7 +61,7 @@ Writes `contracts/deployments/latest.json` with all contract addresses.
 
 ## 4. Reactivity subscriptions
 
-After deploy, register Solidity subscriptions (mock emitter events, block tick, schedule):
+After deploy, register Solidity subscriptions (mock emitter wildcards, BlockTick, EpochTick, and a one-off Schedule — see `SETUP.md`):
 
 ```bash
 npm run contracts:setup-subscriptions

@@ -5,9 +5,11 @@ type DrawerProps = {
   title: string
   onClose: () => void
   children: ReactNode
+  /** Wider panel for long-form content (e.g. dashboard guide). */
+  wide?: boolean
 }
 
-export function Drawer({ open, title, onClose, children }: DrawerProps) {
+export function Drawer({ open, title, onClose, children, wide = false }: DrawerProps) {
   if (!open) {
     return null
   }
@@ -20,7 +22,11 @@ export function Drawer({ open, title, onClose, children }: DrawerProps) {
         aria-label="Close panel"
         onClick={onClose}
       />
-      <aside className="relative z-10 flex h-full w-full max-w-lg flex-col border-l border-slate-800 bg-slate-950 shadow-2xl">
+      <aside
+        className={`relative z-10 flex h-full w-full flex-col border-l border-slate-800 bg-slate-950 shadow-2xl ${
+          wide ? 'max-w-2xl' : 'max-w-lg'
+        }`}
+      >
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
           <button

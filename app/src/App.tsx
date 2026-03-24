@@ -14,6 +14,7 @@ import {
 } from 'recharts'
 import {
   BellRing,
+  CircleHelp,
   Clock3,
   ListOrdered,
   Pencil,
@@ -35,6 +36,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
 import { appConfig, hasCoreAddresses } from './config'
 import { CopyableAddress } from './components/CopyableAddress'
+import { DashboardGuideDrawer } from './components/DashboardGuideDrawer'
 import { Drawer } from './components/Drawer'
 import { ErrorToast } from './components/ErrorToast'
 import { RunTimeline } from './components/RunTimeline'
@@ -372,6 +374,7 @@ function App() {
   const [alertFilter, setAlertFilter] = useState('')
   const [workflowFilter, setWorkflowFilter] = useState('')
   const [runFilter, setRunFilter] = useState('')
+  const [dashboardGuideOpen, setDashboardGuideOpen] = useState(false)
   const [stepsDrawerWorkflowId, setStepsDrawerWorkflowId] = useState<bigint | null>(null)
   const [workflowSteps, setWorkflowSteps] = useState<
     { target: string; label: string; allowFailure: boolean }[]
@@ -923,7 +926,19 @@ function App() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <ConnectButton chainStatus="icon" showBalance={false} />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <ConnectButton chainStatus="icon" showBalance={false} />
+                <button
+                  type="button"
+                  onClick={() => setDashboardGuideOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 px-3 py-2 text-xs font-medium text-indigo-100 transition hover:bg-indigo-500/25"
+                  aria-label="Open dashboard guide"
+                  title="Dashboard guide"
+                >
+                  <CircleHelp className="h-4 w-4 shrink-0" />
+                  Guide
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => void refreshDashboard()}
@@ -2285,6 +2300,10 @@ function App() {
         </Drawer>
       </main>
 
+      <DashboardGuideDrawer
+        open={dashboardGuideOpen}
+        onClose={() => setDashboardGuideOpen(false)}
+      />
       <ErrorToast message={error} onDismiss={() => setError(null)} />
     </div>
   )

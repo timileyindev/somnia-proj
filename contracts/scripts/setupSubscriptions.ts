@@ -44,7 +44,7 @@ await assertReactivitySubscribePreflight({
   subscriberAddress,
 });
 
-const { sdk } = createAutopilotSdk(rpcUrl, privateKey, chainId);
+const { sdk, walletClient } = createAutopilotSdk(rpcUrl, privateKey, chainId);
 const gas = reactivityGasFromEnv();
 const scheduleDelayMs = Number(process.env.SCHEDULE_DELAY_MS ?? "90000");
 
@@ -53,6 +53,7 @@ let summary;
 try {
   summary = await createStandardAutopilotSubscriptions({
     sdk,
+    walletClient,
     deployment,
     gas,
     scheduleDelayMs,

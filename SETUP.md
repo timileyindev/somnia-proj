@@ -93,6 +93,8 @@ npm run contracts:setup-subscriptions
 
 This reads `latest.json`, uses `@somnia-autopilot/sdk` to create the standard autopilot subscriptions, and writes **`contracts/deployments/subscriptions.latest.json`**.
 
+**Subscriptions vs registry jobs:** On-chain **subscriptions** decide which contract logs Somnia forwards into your handler. **Jobs** in `AutomationRegistry` filter those events again inside `ReactiveAutopilotHandler` (emitter, `topic0`, etc.). A job with wildcard `topic0` still does nothing if no subscription ever delivers that log. After changing subscription shape, **re-run this script** (and cancel stale subs on-chain if you duplicated them).
+
 **What the script does (same path as Somnia docs):**
 
 1. Build viem clients with **`somniaTestnet` from `viem/chains`** plus your `SOMNIA_RPC_URL` (see [Solidity on-chain reactivity tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial), Step 4).
@@ -102,6 +104,10 @@ This reads `latest.json`, uses `@somnia-autopilot/sdk` to create the standard au
 If `subscribe` still reverts after preflight passes, cross-check [gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration), **32+ SOMI** on the subscriber ([Solidity on-chain tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial), [subscription management](https://docs.somnia.network/developer/reactivity/tooling/subscription-management)), and duplicate / stale subscriptions. There is no alternate subscribe API in this repo beyond `@somnia-chain/reactivity` → precompile `subscribe`.
 
 **Minimum path after a fresh deploy:** deploy → **then** run `setup-subscriptions`. Without subscriptions, the reactive pipeline will not behave as intended on testnet.
+
+**Mock emitter subscription:** The SDK creates **one** subscription on `mockSignalEmitter` **without** `eventTopics`, so the Reactivity SDK pads topic slots with `bytes32(0)` (wildcard per topic). That delivers **HealthSignal**, **MetricSignal**, and any other events from that contract. Do **not** confuse a registry job’s “any topic” (`topic0 = 0`) with subscribing using a single literal `0x00…00` topic — that would only match logs whose first topic is actually zero, which normal Solidity events never use.
+
+**Block tick, epoch tick, schedule:** `@somnia-chain/reactivity` **0.1.10** rejects `createSoliditySubscription` when `emitter` is the reactivity precompile (`0x…0100`), which means `createOnchainBlockTickSubscription` and `scheduleOnchainCronJob` return **“Emitter cannot be set to the precompile”** before any transaction is sent. This repo calls the precompile’s **`subscribe`** directly for those three (same `SubscriptionData` shape as the [Solidity docs](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial)), and adds an **EpochTick** subscription so epoch-based jobs can fire. Re-run `setup-subscriptions` after pulling this fix.
 
 ## 6. Optional scripts
 

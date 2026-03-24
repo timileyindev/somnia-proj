@@ -1,5 +1,10 @@
 import { SDK } from "@somnia-chain/reactivity";
-import { createPublicClient, createWalletClient, http } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type WalletClient,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { somniaChainFor } from "./chain.js";
 import type { ReactivityGasConfig } from "./types.js";
@@ -31,6 +36,8 @@ export function normalizePrivateKey(raw: string): `0x${string}` {
 export type AutopilotSdkClients = {
   sdk: SDK;
   chainId: number;
+  /** Use for precompile `subscribe` when `@somnia-chain/reactivity` rejects system emitters. */
+  walletClient: WalletClient;
 };
 
 export function createAutopilotSdk(
@@ -54,7 +61,7 @@ export function createAutopilotSdk(
     wallet: walletClient as never,
   });
 
-  return { sdk, chainId };
+  return { sdk, chainId, walletClient };
 }
 
 export function baseSoliditySubscription(

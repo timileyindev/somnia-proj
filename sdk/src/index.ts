@@ -18,3 +18,11 @@ export {
   type CreateStandardSubscriptionsParams,
 } from "./subscriptions.js";
 export { assertReactivitySubscribePreflight } from "./reactivityPreflight.js";
+export { SOMNIA_REACTIVITY_PRECOMPILE } from "./somniaPrecompile.js";
+export {
+  blockTickTopic0,
+  epochTickTopic0,
+  scheduleTopic0,
+  zeroTopic32,
+} from "./systemEventTopics.js";
+export { subscribeViaPrecompile } from "./subscribePrecompile.js";
