@@ -20,6 +20,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  Trash2,
   Wrench,
   Zap,
 } from 'lucide-react'
@@ -33,6 +34,7 @@ import {
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount } from 'wagmi'
 import { appConfig, hasCoreAddresses } from './config'
+import { CopyableAddress } from './components/CopyableAddress'
 import { Drawer } from './components/Drawer'
 import { ErrorToast } from './components/ErrorToast'
 import { RunTimeline } from './components/RunTimeline'
@@ -42,6 +44,7 @@ import { useEthersSigner } from './hooks/useEthersSigner'
 
 type Job = {
   id: bigint
+  creator: string
   name: string
   triggerType: number
   emitter: string
@@ -100,6 +103,41 @@ type Contracts = {
 const triggerLabels = ['Schedule', 'Block Tick', 'Epoch Tick', 'External Event']
 const healthSignalTopic = ethers.id('HealthSignal(address,uint256,uint256)')
 const metricSignalTopic = ethers.id('MetricSignal(uint256,uint256,uint256)')
+/** Emitter address jobs must use for Schedule / BlockTick / EpochTick (matches handler). */
+const SOMNIA_REACTIVITY_PRECOMPILE = '0x0000000000000000000000000000000000000100'
+const blockTickTopic = ethers.id('BlockTick(uint64)')
+const epochTickTopic = ethers.id('EpochTick(uint64,uint64)')
+const scheduleTopic = ethers.id('Schedule(uint256)')
+
+type DemoTopicPreset = 'health' | 'metric' | 'any' | 'custom'
+
+/** Maps stored topic0 to a preset for loading edit forms (empty string alone is ambiguous). */
+function inferTopicPreset(topic0: string): DemoTopicPreset {
+  if (topic0 === healthSignalTopic) return 'health'
+  if (topic0 === metricSignalTopic) return 'metric'
+  if (!topic0 || topic0 === ethers.ZeroHash) return 'any'
+  return 'custom'
+}
+
+function jobEmitterAndTopicForTrigger(
+  triggerType: string,
+  mockEmitter: string | undefined,
+): { emitter: string; topic0: string } {
+  const mock = (mockEmitter ?? '').trim()
+  if (triggerType === '0') {
+    return { emitter: SOMNIA_REACTIVITY_PRECOMPILE, topic0: scheduleTopic }
+  }
+  if (triggerType === '1') {
+    return { emitter: SOMNIA_REACTIVITY_PRECOMPILE, topic0: blockTickTopic }
+  }
+  if (triggerType === '2') {
+    return { emitter: SOMNIA_REACTIVITY_PRECOMPILE, topic0: epochTickTopic }
+  }
+  return {
+    emitter: mock,
+    topic0: healthSignalTopic,
+  }
+}
 
 function shortAddress(address: string): string {
   if (!address || address === ethers.ZeroAddress) {
@@ -130,6 +168,128 @@ function toDescendingById<T extends { id: bigint }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     if (a.id === b.id) return 0
     return a.id > b.id ? -1 : 1
+  })
+}
+
+type WorkflowStepForm = {
+  id: string
+  target: string
+  value: string
+  data: string
+  allowFailure: boolean
+  label: string
+}
+
+const mockProtocolInterface = new ethers.Interface(mockProtocolControllerAbi)
+const mockSignalInterface = new ethers.Interface(mockSignalEmitterAbi)
+
+/** Addresses from env (this deployment) — users can still paste any other contract in the target field. */
+function workflowConfiguredTargets(): { label: string; address: string }[] {
+  const c = appConfig.contracts
+  const out: { label: string; address: string }[] = []
+  const add = (label: string, addr: string | undefined) => {
+    const t = addr?.trim()
+    if (t) {
+      out.push({ label, address: t })
+    }
+  }
+  add('Mock protocol controller', c.mockProtocolController)
+  add('Mock signal emitter', c.mockSignalEmitter)
+  add('Automation registry', c.automationRegistry)
+  add('Workflow orchestrator', c.workflowOrchestrator)
+  add('Reactive autopilot handler', c.reactiveAutopilotHandler)
+  return out
+}
+
+/** Select value for “deployment” dropdown: option address if target matches, else ''. */
+function deploymentTargetSelectValue(
+  stepTarget: string,
+  options: { label: string; address: string }[],
+): string {
+  const t = stepTarget.trim()
+  if (!t) {
+    return ''
+  }
+  let normalized: string
+  try {
+    normalized = ethers.getAddress(t)
+  } catch {
+    return ''
+  }
+  for (const o of options) {
+    try {
+      if (ethers.getAddress(o.address) === normalized) {
+        return o.address
+      }
+    } catch {
+      continue
+    }
+  }
+  return ''
+}
+
+function workflowStepFormTemplate(index: number): WorkflowStepForm {
+  return {
+    id: crypto.randomUUID(),
+    target: '',
+    value: '0',
+    data: '0x',
+    allowFailure: false,
+    label: `Step ${index + 1}`,
+  }
+}
+
+function buildWorkflowStepsForChain(
+  steps: WorkflowStepForm[],
+): {
+  target: string
+  value: bigint
+  data: string
+  allowFailure: boolean
+  label: string
+}[] {
+  if (steps.length === 0) {
+    throw new Error('Add at least one step.')
+  }
+  return steps.map((s, i) => {
+    const n = i + 1
+    const targetRaw = s.target.trim()
+    if (!targetRaw) {
+      throw new Error(`Step ${n}: target address is required.`)
+    }
+    let target: string
+    try {
+      target = ethers.getAddress(targetRaw)
+    } catch {
+      throw new Error(`Step ${n}: invalid target address.`)
+    }
+    if (target === ethers.ZeroAddress) {
+      throw new Error(`Step ${n}: target cannot be the zero address.`)
+    }
+    let value: bigint
+    try {
+      value = BigInt(s.value.trim() || '0')
+    } catch {
+      throw new Error(`Step ${n}: invalid ETH value (wei as a whole number).`)
+    }
+    if (value < 0n) {
+      throw new Error(`Step ${n}: ETH value cannot be negative.`)
+    }
+    const d = s.data.trim()
+    const dataHex = d === '' || d === '0x' ? '0x' : d.startsWith('0x') ? d : `0x${d}`
+    try {
+      ethers.getBytes(dataHex)
+    } catch {
+      throw new Error(`Step ${n}: calldata must be valid hex (use 0x or empty for no call data).`)
+    }
+    const label = s.label.trim() || `Step ${n}`
+    return {
+      target,
+      value,
+      data: dataHex,
+      allowFailure: s.allowFailure,
+      label,
+    }
   })
 }
 
@@ -190,6 +350,7 @@ function App() {
     triggerType: '3',
     emitter: appConfig.contracts.mockSignalEmitter ?? '',
     topic0: healthSignalTopic,
+    topicPreset: 'health' as DemoTopicPreset,
     triggerValue: '0',
     workflowId: '1',
     cooldownSeconds: '30',
@@ -198,6 +359,7 @@ function App() {
     name: 'Metric threshold alert',
     emitter: appConfig.contracts.mockSignalEmitter ?? '',
     topic0: metricSignalTopic,
+    topicPreset: 'metric' as DemoTopicPreset,
     minValue: '800',
     workflowId: '1',
     cooldownSeconds: '30',
@@ -215,6 +377,11 @@ function App() {
     { target: string; label: string; allowFailure: boolean }[]
   >([])
   const [stepsLoading, setStepsLoading] = useState(false)
+  const [workflowDrawerOpen, setWorkflowDrawerOpen] = useState(false)
+  const [workflowForm, setWorkflowForm] = useState({
+    name: '',
+    steps: [workflowStepFormTemplate(0)] as WorkflowStepForm[],
+  })
 
   const readProvider = useMemo(() => {
     if (!appConfig.rpcUrl) {
@@ -304,6 +471,42 @@ function App() {
     [refreshDashboard],
   )
 
+  const openNewWorkflowDrawer = useCallback(() => {
+    setWorkflowForm({
+      name: '',
+      steps: [workflowStepFormTemplate(0)],
+    })
+    setWorkflowDrawerOpen(true)
+  }, [])
+
+  const submitWorkflowDrawer = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!writeContracts) {
+        setError('Connect a wallet on the correct network before creating a workflow.')
+        return
+      }
+      const name = workflowForm.name.trim()
+      if (!name) {
+        setError('Enter a workflow name.')
+        return
+      }
+      let built: ReturnType<typeof buildWorkflowStepsForChain>
+      try {
+        built = buildWorkflowStepsForChain(workflowForm.steps)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Invalid workflow steps.')
+        return
+      }
+      await withAction('create workflow', async () => {
+        const tx = await writeContracts.orchestrator.createWorkflow(name, built)
+        await tx.wait()
+        setWorkflowDrawerOpen(false)
+      })
+    },
+    [workflowForm, withAction, writeContracts],
+  )
+
   const createDefaultWorkflow = useCallback(async () => {
     if (!writeContracts || !writeContracts.protocolController) {
       setError(
@@ -312,7 +515,6 @@ function App() {
       return
     }
 
-    const protocolInterface = new ethers.Interface(mockProtocolControllerAbi)
     await withAction('create workflow', async () => {
       const tx = await writeContracts.orchestrator.createWorkflow(
         'UI Risk Mitigation Workflow',
@@ -320,21 +522,21 @@ function App() {
           {
             target: writeContracts.protocolController!.target,
             value: 0n,
-            data: protocolInterface.encodeFunctionData('activateProtectionMode'),
+            data: mockProtocolInterface.encodeFunctionData('activateProtectionMode'),
             allowFailure: false,
             label: 'Activate protection',
           },
           {
             target: writeContracts.protocolController!.target,
             value: 0n,
-            data: protocolInterface.encodeFunctionData('rebalance', [300n]),
+            data: mockProtocolInterface.encodeFunctionData('rebalance', [300n]),
             allowFailure: false,
             label: 'Rebalance',
           },
           {
             target: writeContracts.protocolController!.target,
             value: 0n,
-            data: protocolInterface.encodeFunctionData('repayDebt', [150n]),
+            data: mockProtocolInterface.encodeFunctionData('repayDebt', [150n]),
             allowFailure: true,
             label: 'Repay debt',
           },
@@ -433,12 +635,17 @@ function App() {
     [jobs],
   )
 
+  const workflowDeploymentPicklist = useMemo(() => workflowConfiguredTargets(), [])
+
   const q = (row: string, needle: string) =>
     needle.trim() === '' || row.toLowerCase().includes(needle.trim().toLowerCase())
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) =>
-      q(`${job.name} ${job.id} ${job.emitter} ${job.topic0}`, jobFilter),
+      q(
+        `${job.name} ${job.id} ${job.emitter} ${job.topic0} ${job.creator}`,
+        jobFilter,
+      ),
     )
   }, [jobFilter, jobs])
 
@@ -467,12 +674,13 @@ function App() {
       triggerType: '3',
       emitter: appConfig.contracts.mockSignalEmitter ?? '',
       topic0: healthSignalTopic,
+      topicPreset: 'health',
       triggerValue: '0',
       workflowId: workflows[0]?.id.toString() ?? '1',
       cooldownSeconds: '30',
     })
     setJobDrawerOpen(true)
-  }, [workflows])
+  }, [workflows, appConfig.contracts.mockSignalEmitter])
 
   const openEditJobDrawer = useCallback((job: Job) => {
     setEditingJobId(job.id)
@@ -481,6 +689,7 @@ function App() {
       triggerType: String(job.triggerType),
       emitter: job.emitter,
       topic0: job.topic0,
+      topicPreset: inferTopicPreset(job.topic0),
       triggerValue: job.triggerValue.toString(),
       workflowId: job.workflowId.toString(),
       cooldownSeconds: job.cooldownSeconds.toString(),
@@ -494,12 +703,13 @@ function App() {
       name: 'Metric threshold alert',
       emitter: appConfig.contracts.mockSignalEmitter ?? '',
       topic0: metricSignalTopic,
+      topicPreset: 'metric',
       minValue: '800',
       workflowId: workflows[0]?.id.toString() ?? '1',
       cooldownSeconds: '30',
     })
     setAlertDrawerOpen(true)
-  }, [workflows])
+  }, [workflows, appConfig.contracts.mockSignalEmitter])
 
   const openEditAlertDrawer = useCallback((rule: AlertRule) => {
     setEditingAlertId(rule.id)
@@ -507,6 +717,7 @@ function App() {
       name: rule.name,
       emitter: rule.emitter,
       topic0: rule.topic0,
+      topicPreset: inferTopicPreset(rule.topic0),
       minValue: rule.minValue.toString(),
       workflowId: rule.workflowId.toString(),
       cooldownSeconds: rule.cooldownSeconds.toString(),
@@ -598,6 +809,13 @@ function App() {
         setError('Connect a wallet before saving jobs.')
         return
       }
+      if (jobForm.triggerType === '3' && jobForm.topicPreset === 'custom') {
+        const t = jobForm.topic0.trim()
+        if (!/^0x[a-fA-F0-9]{64}$/.test(t)) {
+          setError('Custom topic0 must be 0x followed by 64 hex characters.')
+          return
+        }
+      }
       const input = {
         name: jobForm.name,
         triggerType: Number(jobForm.triggerType),
@@ -633,6 +851,13 @@ function App() {
       if (!writeContracts) {
         setError('Connect a wallet before saving alerts.')
         return
+      }
+      if (alertForm.topicPreset === 'custom') {
+        const t = alertForm.topic0.trim()
+        if (!/^0x[a-fA-F0-9]{64}$/.test(t)) {
+          setError('Custom topic0 must be 0x followed by 64 hex characters.')
+          return
+        }
       }
       const input = {
         name: alertForm.name,
@@ -749,6 +974,30 @@ function App() {
           </ol>
         </section>
 
+        {hasCoreAddresses() ? (
+          <section className="rounded-xl border border-cyan-500/20 bg-cyan-950/10 p-4">
+            <h2 className="mb-1 text-sm font-semibold text-cyan-200">
+              Demo contract addresses (copy for job / alert emitter)
+            </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Use the mock signal contract as the <strong className="text-slate-400">emitter</strong> when
+              you want health or metric events; paste the full address into the job or alert form.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <CopyableAddress
+                label="Mock signal emitter"
+                description="HealthSignal & MetricSignal events (demo protocol)"
+                address={appConfig.contracts.mockSignalEmitter}
+              />
+              <CopyableAddress
+                label="Mock protocol controller"
+                description="Targets for sample workflow steps"
+                address={appConfig.contracts.mockProtocolController}
+              />
+            </div>
+          </section>
+        ) : null}
+
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             label="Handler runs"
@@ -807,13 +1056,23 @@ function App() {
                 <p className="mb-2 text-xs text-slate-500">
                   A workflow is the script: which contracts to call, in order, when something triggers.
                 </p>
-                <button
-                  type="button"
-                  onClick={createDefaultWorkflow}
-                  className="w-full rounded-lg border border-indigo-500/35 bg-indigo-500/15 px-3 py-2.5 text-left text-sm font-medium text-indigo-100 transition hover:bg-indigo-500/25"
-                >
-                  Create sample workflow (3 demo steps)
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={openNewWorkflowDrawer}
+                    className="inline-flex w-full items-center gap-2 rounded-lg border border-indigo-400/40 bg-indigo-500/20 px-3 py-2.5 text-left text-sm font-medium text-indigo-50 transition hover:bg-indigo-500/30"
+                  >
+                    <Plus className="h-4 w-4 shrink-0" />
+                    Create workflow (custom steps)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createDefaultWorkflow}
+                    className="w-full rounded-lg border border-indigo-500/35 bg-indigo-500/15 px-3 py-2.5 text-left text-sm font-medium text-indigo-100 transition hover:bg-indigo-500/25"
+                  >
+                    Create sample workflow (3 demo steps)
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -866,9 +1125,10 @@ function App() {
                   Advanced · manual run
                 </p>
                 <p className="mb-2 text-xs text-slate-500">
-                  Runs one job by ID through the handler, <strong className="text-slate-400">only</strong>{' '}
-                  if your connected wallet is the <strong className="text-slate-400">owner</strong> of
-                  the reactive handler (typically the deployer).
+                  Runs one job by ID through the handler if your wallet is the{' '}
+                  <strong className="text-slate-400">job creator</strong> (who created it on-chain) or
+                  the <strong className="text-slate-400">reactive handler owner</strong> (usually the
+                  deployer).
                 </p>
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="grid gap-1">
@@ -888,7 +1148,7 @@ function App() {
                     onClick={runManualJob}
                     className="flex-1 rounded-lg border border-amber-600/40 bg-amber-950/40 px-3 py-2 text-sm font-medium text-amber-100 transition hover:bg-amber-900/50"
                   >
-                    Run this job now (owner wallet)
+                    Run this job now
                   </button>
                 </div>
               </div>
@@ -1007,6 +1267,7 @@ function App() {
                   <tr>
                     <th className="px-3 py-2">ID</th>
                     <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Creator</th>
                     <th className="px-3 py-2">Trigger</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2">Runs</th>
@@ -1017,7 +1278,7 @@ function App() {
                 <tbody>
                   {filteredJobs.length === 0 ? (
                     <tr>
-                      <td className="px-3 py-4 text-slate-400" colSpan={7}>
+                      <td className="px-3 py-4 text-slate-400" colSpan={8}>
                         {jobs.length === 0 ? 'No jobs yet.' : 'No matches.'}
                       </td>
                     </tr>
@@ -1028,8 +1289,11 @@ function App() {
                         <td className="px-3 py-2">
                           <div className="font-medium">{job.name}</div>
                           <div className="text-xs text-slate-400">
-                            {shortAddress(job.emitter)} · {shortHex(job.topic0)}
+                            Emitter {shortAddress(job.emitter)} · {shortHex(job.topic0)}
                           </div>
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-400">
+                          {shortAddress(job.creator)}
                         </td>
                         <td className="px-3 py-2 text-slate-300">
                           {triggerLabels[job.triggerType] ?? `#${job.triggerType}`}
@@ -1163,14 +1427,24 @@ function App() {
                 <h2 className="text-base font-semibold">Workflows</h2>
                 <p className="text-xs text-slate-500">Ordered contract calls (the “what runs”).</p>
               </div>
-              <div className="relative max-w-xs flex-1">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                <input
-                  value={workflowFilter}
-                  onChange={(e) => setWorkflowFilter(e.target.value)}
-                  placeholder="Filter workflows…"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm"
-                />
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={openNewWorkflowDrawer}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-3 py-2 text-sm font-medium text-indigo-100 transition hover:bg-indigo-500/25"
+                >
+                  <Plus className="h-4 w-4" />
+                  New workflow
+                </button>
+                <div className="relative min-w-0 flex-1 sm:max-w-xs">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                  <input
+                    value={workflowFilter}
+                    onChange={(e) => setWorkflowFilter(e.target.value)}
+                    placeholder="Filter workflows…"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm"
+                  />
+                </div>
               </div>
             </div>
             <div className="max-h-80 overflow-auto rounded-lg border border-slate-800">
@@ -1320,8 +1594,8 @@ function App() {
           }
         >
           <p className="mb-3 text-xs text-slate-500">
-            Choose trigger type (time/tick/event), then the workflow ID to execute. External events need
-            the emitter contract and event topic.
+            Pick a trigger type first — schedule / ticks set the system emitter and topic for you. For
+            “contract event”, choose a demo signature or paste topic0 hex.
           </p>
           <form onSubmit={(e) => void submitJobDrawer(e)} className="grid gap-3">
             <div className="grid gap-1">
@@ -1349,12 +1623,19 @@ function App() {
               <select
                 id="job-drawer-trigger-type"
                 value={jobForm.triggerType}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const t = event.target.value
+                  const ext = jobEmitterAndTopicForTrigger(
+                    t,
+                    appConfig.contracts.mockSignalEmitter,
+                  )
                   setJobForm((prev) => ({
                     ...prev,
-                    triggerType: event.target.value,
+                    triggerType: t,
+                    ...ext,
+                    ...(t === '3' ? { topicPreset: inferTopicPreset(ext.topic0) } : {}),
                   }))
-                }
+                }}
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
               >
                 <option value="0">One-off scheduled time (chain callback)</option>
@@ -1363,42 +1644,103 @@ function App() {
                 <option value="3">When a contract emits an event (you set emitter + topic)</option>
               </select>
             </div>
-            <div className="grid gap-1">
-              <label htmlFor="job-drawer-emitter" className="text-xs font-medium text-slate-300">
-                Emitter contract
-              </label>
-              <p className="text-xs text-slate-500">
-                For event-based triggers: the contract that emits the log. For time/tick triggers, use the
-                value your registry expects (often the mock emitter or a placeholder).
-              </p>
-              <input
-                id="job-drawer-emitter"
-                value={jobForm.emitter}
-                onChange={(event) =>
-                  setJobForm((prev) => ({ ...prev, emitter: event.target.value }))
-                }
-                placeholder="0x… check address"
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-              />
-            </div>
-            <div className="grid gap-1">
-              <label htmlFor="job-drawer-topic0" className="text-xs font-medium text-slate-300">
-                Event topic0 (keccak hash)
-              </label>
-              <p className="text-xs text-slate-500">
-                First topic of the log to match; use <span className="font-mono">0x00…</span> or leave
-                per contract docs for non-event triggers.
-              </p>
-              <input
-                id="job-drawer-topic0"
-                value={jobForm.topic0}
-                onChange={(event) =>
-                  setJobForm((prev) => ({ ...prev, topic0: event.target.value }))
-                }
-                placeholder="0x…"
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-              />
-            </div>
+            {jobForm.triggerType === '3' ? (
+              <>
+                <div className="grid gap-1">
+                  <label htmlFor="job-drawer-emitter" className="text-xs font-medium text-slate-300">
+                    Emitter contract
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Contract that emits the log — use the mock signal address from the copy panel above, or
+                    your own contract.
+                  </p>
+                  <input
+                    id="job-drawer-emitter"
+                    value={jobForm.emitter}
+                    onChange={(event) =>
+                      setJobForm((prev) => ({ ...prev, emitter: event.target.value }))
+                    }
+                    placeholder="0x…"
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label htmlFor="job-topic-preset" className="text-xs font-medium text-slate-300">
+                    Event to match (topic0)
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Demo signatures are filled in for you. “Custom” lets you paste the keccak hash from an
+                    ABI tool.
+                  </p>
+                  <select
+                    id="job-topic-preset"
+                    value={jobForm.topicPreset}
+                    onChange={(event) => {
+                      const v = event.target.value as DemoTopicPreset
+                      if (v === 'health') {
+                        setJobForm((prev) => ({
+                          ...prev,
+                          topicPreset: 'health',
+                          topic0: healthSignalTopic,
+                        }))
+                      } else if (v === 'metric') {
+                        setJobForm((prev) => ({
+                          ...prev,
+                          topicPreset: 'metric',
+                          topic0: metricSignalTopic,
+                        }))
+                      } else if (v === 'any') {
+                        setJobForm((prev) => ({
+                          ...prev,
+                          topicPreset: 'any',
+                          topic0: ethers.ZeroHash,
+                        }))
+                      } else {
+                        setJobForm((prev) => ({
+                          ...prev,
+                          topicPreset: 'custom',
+                          topic0: prev.topicPreset === 'custom' ? prev.topic0 : '',
+                        }))
+                      }
+                    }}
+                    className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                  >
+                    <option value="health">HealthSignal (demo — vault + factors)</option>
+                    <option value="metric">MetricSignal (demo — metric id + value)</option>
+                    <option value="any">Any event on this emitter (wildcard topic0)</option>
+                    <option value="custom">Custom — paste topic0 hex below</option>
+                  </select>
+                  {jobForm.topicPreset === 'custom' ? (
+                    <input
+                      id="job-drawer-topic0-custom"
+                      value={jobForm.topic0}
+                      onChange={(event) =>
+                        setJobForm((prev) => ({ ...prev, topic0: event.target.value }))
+                      }
+                      placeholder="0x + 64 hex chars"
+                      className="rounded-lg border border-amber-500/30 bg-slate-950 px-3 py-2 font-mono text-sm"
+                    />
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="grid gap-1 rounded-lg border border-slate-700/80 bg-slate-900/40 px-3 py-2">
+                <p className="text-xs font-medium text-slate-300">System emitter &amp; topic (auto)</p>
+                <p className="text-xs text-slate-500">
+                  Schedule / block / epoch jobs listen to Somnia’s reactivity precompile (
+                  <span className="font-mono">0x…0100</span>) with the matching system event hash. You
+                  don’t need to edit these unless you know what you’re doing.
+                </p>
+                <div className="mt-1 space-y-1 font-mono text-xs text-slate-400">
+                  <div>
+                    <span className="text-slate-500">Emitter:</span> {jobForm.emitter}
+                  </div>
+                  <div className="break-all">
+                    <span className="text-slate-500">Topic0:</span> {jobForm.topic0}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid gap-1">
               <label htmlFor="job-drawer-workflow-id" className="text-xs font-medium text-slate-300">
                 Workflow ID
@@ -1479,8 +1821,8 @@ function App() {
           }
         >
           <p className="mb-3 text-xs text-slate-500">
-            Watches an event on an emitter. The handler reads the first 32-byte number in the event
-            data and compares it to your minimum; if it passes, it can run the workflow.
+            Watches an event on an emitter. Pick a demo event signature below or paste a custom topic0.
+            The handler reads the first 32-byte number in the event data and compares it to your minimum.
           </p>
           <form onSubmit={(e) => void submitAlertDrawer(e)} className="grid gap-3">
             <div className="grid gap-1">
@@ -1514,19 +1856,61 @@ function App() {
               />
             </div>
             <div className="grid gap-1">
-              <label htmlFor="alert-drawer-topic0" className="text-xs font-medium text-slate-300">
-                Event topic0 (keccak hash)
+              <label htmlFor="alert-topic-preset" className="text-xs font-medium text-slate-300">
+                Event to match (topic0)
               </label>
-              <p className="text-xs text-slate-500">Must match the event signature hash for the log you care about.</p>
-              <input
-                id="alert-drawer-topic0"
-                value={alertForm.topic0}
-                onChange={(event) =>
-                  setAlertForm((prev) => ({ ...prev, topic0: event.target.value }))
-                }
-                placeholder="0x…"
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
-              />
+              <p className="text-xs text-slate-500">
+                Demo options fill the keccak hash for you. Use “Custom” to paste from an ABI tool.
+              </p>
+              <select
+                id="alert-topic-preset"
+                value={alertForm.topicPreset}
+                onChange={(event) => {
+                  const v = event.target.value as DemoTopicPreset
+                  if (v === 'health') {
+                    setAlertForm((prev) => ({
+                      ...prev,
+                      topicPreset: 'health',
+                      topic0: healthSignalTopic,
+                    }))
+                  } else if (v === 'metric') {
+                    setAlertForm((prev) => ({
+                      ...prev,
+                      topicPreset: 'metric',
+                      topic0: metricSignalTopic,
+                    }))
+                  } else if (v === 'any') {
+                    setAlertForm((prev) => ({
+                      ...prev,
+                      topicPreset: 'any',
+                      topic0: ethers.ZeroHash,
+                    }))
+                  } else {
+                    setAlertForm((prev) => ({
+                      ...prev,
+                      topicPreset: 'custom',
+                      topic0: prev.topicPreset === 'custom' ? prev.topic0 : '',
+                    }))
+                  }
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              >
+                <option value="health">HealthSignal (demo)</option>
+                <option value="metric">MetricSignal (demo)</option>
+                <option value="any">Any event on this emitter (wildcard)</option>
+                <option value="custom">Custom — paste topic0 hex below</option>
+              </select>
+              {alertForm.topicPreset === 'custom' ? (
+                <input
+                  id="alert-drawer-topic0-custom"
+                  value={alertForm.topic0}
+                  onChange={(event) =>
+                    setAlertForm((prev) => ({ ...prev, topic0: event.target.value }))
+                  }
+                  placeholder="0x + 64 hex chars"
+                  className="rounded-lg border border-amber-500/30 bg-slate-950 px-3 py-2 font-mono text-sm"
+                />
+              ) : null}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-1">
@@ -1585,6 +1969,289 @@ function App() {
               className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/20 px-3 py-2 text-sm font-medium transition hover:bg-emerald-500/30"
             >
               {editingAlertId ? 'Save changes' : 'Create alert on-chain'}
+            </button>
+          </form>
+        </Drawer>
+
+        <Drawer
+          open={workflowDrawerOpen}
+          onClose={() => setWorkflowDrawerOpen(false)}
+          title="Create workflow"
+        >
+          <p className="mb-3 text-xs text-slate-500">
+            Each step calls <strong className="font-medium text-slate-400">any</strong> contract on this
+            network — including ones you deployed outside this dashboard. Paste the contract address and the
+            calldata hex from your own ABI encoder, wallet, or scripts. The env “insert address” and
+            quick-calldata menus are optional shortcuts for this repo’s demo contracts only.
+          </p>
+          <form onSubmit={(e) => void submitWorkflowDrawer(e)} className="grid gap-4">
+            <div className="grid gap-1">
+              <label htmlFor="workflow-drawer-name" className="text-xs font-medium text-slate-300">
+                Workflow name
+              </label>
+              <input
+                id="workflow-drawer-name"
+                value={workflowForm.name}
+                onChange={(event) =>
+                  setWorkflowForm((prev) => ({ ...prev, name: event.target.value }))
+                }
+                placeholder="e.g. My rebalance flow"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-medium text-slate-300">Steps (order matters)</p>
+              {workflowForm.steps.map((step, index) => (
+                <div
+                  key={step.id}
+                  className="grid gap-2 rounded-lg border border-slate-700/90 bg-slate-950/40 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-400">
+                      Step {index + 1}
+                    </span>
+                    {workflowForm.steps.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setWorkflowForm((prev) => ({
+                            ...prev,
+                            steps: prev.steps.filter((_, j) => j !== index),
+                          }))
+                        }
+                        className="inline-flex items-center gap-1 rounded border border-red-500/30 px-2 py-0.5 text-xs text-red-200/90 hover:bg-red-500/10"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-1">
+                    <label
+                      className="text-xs text-slate-400"
+                      htmlFor={`workflow-step-label-${index}`}
+                    >
+                      Label
+                    </label>
+                    <input
+                      id={`workflow-step-label-${index}`}
+                      value={step.label}
+                      onChange={(event) =>
+                        setWorkflowForm((prev) => ({
+                          ...prev,
+                          steps: prev.steps.map((s, j) =>
+                            j === index ? { ...s, label: event.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="Human-readable name"
+                      className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <label
+                      className="text-xs text-slate-400"
+                      htmlFor={`workflow-step-target-${index}`}
+                    >
+                      Target contract
+                    </label>
+                    <input
+                      id={`workflow-step-target-${index}`}
+                      value={step.target}
+                      onChange={(event) =>
+                        setWorkflowForm((prev) => ({
+                          ...prev,
+                          steps: prev.steps.map((s, j) =>
+                            j === index ? { ...s, target: event.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="0x… any contract on this chain"
+                      className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+                    />
+                  </div>
+                  {workflowDeploymentPicklist.length > 0 ? (
+                    <div className="grid gap-1">
+                      <label
+                        className="text-xs text-slate-400"
+                        htmlFor={`workflow-step-target-preset-${index}`}
+                      >
+                        Insert address from this deployment
+                      </label>
+                      <select
+                        id={`workflow-step-target-preset-${index}`}
+                        value={deploymentTargetSelectValue(
+                          step.target,
+                          workflowDeploymentPicklist,
+                        )}
+                        onChange={(event) => {
+                          const addr = event.target.value
+                          setWorkflowForm((prev) => ({
+                            ...prev,
+                            steps: prev.steps.map((s, j) =>
+                              j === index ? { ...s, target: addr } : s,
+                            ),
+                          }))
+                        }}
+                        className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                      >
+                        <option value="">Choose a configured contract…</option>
+                        {workflowDeploymentPicklist.map((opt) => (
+                          <option
+                            key={`${opt.label}-${opt.address}`}
+                            value={opt.address}
+                          >
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  <div className="grid gap-1">
+                    <label
+                      className="text-xs text-slate-400"
+                      htmlFor={`workflow-step-calldata-helper-${index}`}
+                    >
+                      Quick calldata (demo ABIs — target unchanged)
+                    </label>
+                    <p className="text-[11px] leading-snug text-slate-500">
+                      Fills the calldata field only. Set target to the contract that implements that call
+                      (e.g. mock protocol for the first three, mock signal emitter for the last two).
+                    </p>
+                    <select
+                      id={`workflow-step-calldata-helper-${index}`}
+                      value=""
+                      onChange={(event) => {
+                        const v = event.target.value
+                        if (!v) {
+                          return
+                        }
+                        let data = '0x'
+                        if (v === 'p_activate') {
+                          data = mockProtocolInterface.encodeFunctionData(
+                            'activateProtectionMode',
+                            [],
+                          )
+                        } else if (v === 'p_rebalance300') {
+                          data = mockProtocolInterface.encodeFunctionData('rebalance', [300n])
+                        } else if (v === 'p_repay150') {
+                          data = mockProtocolInterface.encodeFunctionData('repayDebt', [150n])
+                        } else if (v === 's_metric') {
+                          data = mockSignalInterface.encodeFunctionData('emitMetricSignal', [1n, 930n])
+                        } else if (v === 's_health') {
+                          data = mockSignalInterface.encodeFunctionData('emitHealthSignal', [
+                            ethers.ZeroAddress,
+                            870n,
+                            1_250n,
+                          ])
+                        }
+                        setWorkflowForm((prev) => ({
+                          ...prev,
+                          steps: prev.steps.map((s, j) =>
+                            j === index ? { ...s, data } : s,
+                          ),
+                        }))
+                      }}
+                      className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                    >
+                      <option value="">Encode demo call into calldata…</option>
+                      <optgroup label="Mock protocol controller">
+                        <option value="p_activate">activateProtectionMode()</option>
+                        <option value="p_rebalance300">rebalance(300)</option>
+                        <option value="p_repay150">repayDebt(150)</option>
+                      </optgroup>
+                      <optgroup label="Mock signal emitter">
+                        <option value="s_metric">emitMetricSignal(1, 930)</option>
+                        <option value="s_health">
+                          emitHealthSignal(zero vault, 870, 1250)
+                        </option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div className="grid gap-1">
+                    <label
+                      className="text-xs text-slate-400"
+                      htmlFor={`workflow-step-value-${index}`}
+                    >
+                      Value (wei)
+                    </label>
+                    <input
+                      id={`workflow-step-value-${index}`}
+                      value={step.value}
+                      onChange={(event) =>
+                        setWorkflowForm((prev) => ({
+                          ...prev,
+                          steps: prev.steps.map((s, j) =>
+                            j === index ? { ...s, value: event.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="0"
+                      className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <label
+                      className="text-xs text-slate-400"
+                      htmlFor={`workflow-step-data-${index}`}
+                    >
+                      Calldata (hex)
+                    </label>
+                    <textarea
+                      id={`workflow-step-data-${index}`}
+                      value={step.data}
+                      onChange={(event) =>
+                        setWorkflowForm((prev) => ({
+                          ...prev,
+                          steps: prev.steps.map((s, j) =>
+                            j === index ? { ...s, data: event.target.value } : s,
+                          ),
+                        }))
+                      }
+                      placeholder="0x"
+                      rows={2}
+                      className="resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs"
+                    />
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={step.allowFailure}
+                      onChange={(event) =>
+                        setWorkflowForm((prev) => ({
+                          ...prev,
+                          steps: prev.steps.map((s, j) =>
+                            j === index ? { ...s, allowFailure: event.target.checked } : s,
+                          ),
+                        }))
+                      }
+                      className="rounded border-slate-600"
+                    />
+                    Allow failure (continue workflow if this call reverts)
+                  </label>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setWorkflowForm((prev) => ({
+                  ...prev,
+                  steps: [...prev.steps, workflowStepFormTemplate(prev.steps.length)],
+                }))
+              }
+              className="rounded-lg border border-slate-600 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
+            >
+              Add step
+            </button>
+
+            <button
+              type="submit"
+              className="rounded-lg border border-indigo-500/35 bg-indigo-500/20 px-3 py-2.5 text-sm font-medium text-indigo-100 transition hover:bg-indigo-500/30"
+            >
+              Create workflow on-chain
             </button>
           </form>
         </Drawer>

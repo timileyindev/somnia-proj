@@ -141,7 +141,7 @@ Open the URL Vite prints (usually `http://localhost:5173`). Connect a wallet on 
 5. Sync addresses → `app/.env`  
 6. `npm run dev`  
 
-**Manual job run:** `ReactiveAutopilotHandler.runJobManually` is **owner-only** (typically the deployer). Use that wallet in the UI or `contracts/scripts/triggerDemo.ts`.
+**Manual job run:** `ReactiveAutopilotHandler.runJobManually` accepts the **handler owner** or the **job creator** (who called `createJob`). Use the matching wallet in the UI or `contracts/scripts/triggerDemo.ts`.
 
 ## 10. Replacing mocks
 

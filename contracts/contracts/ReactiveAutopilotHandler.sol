@@ -37,6 +37,9 @@ contract ReactiveAutopilotHandler is SomniaEventHandler, Ownable {
         uint256 runId
     );
 
+    error UnknownJobId();
+    error UnauthorizedManualRun();
+
     constructor(
         address registryAddress,
         address orchestratorAddress,
@@ -48,8 +51,14 @@ contract ReactiveAutopilotHandler is SomniaEventHandler, Ownable {
         orchestrator = WorkflowOrchestrator(payable(orchestratorAddress));
     }
 
-    function runJobManually(uint256 jobId, bytes32 contextHash) external onlyOwner {
+    function runJobManually(uint256 jobId, bytes32 contextHash) external {
         AutomationRegistry.Job memory job = registry.getJob(jobId);
+        if (job.id == 0) {
+            revert UnknownJobId();
+        }
+        if (msg.sender != owner() && msg.sender != job.creator) {
+            revert UnauthorizedManualRun();
+        }
         if (!job.active || job.workflowId == 0) {
             return;
         }

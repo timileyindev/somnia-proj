@@ -114,7 +114,7 @@ Open the URL Vite prints (usually `http://localhost:5173`). Connect a wallet on 
 3. (Optional) `seedDemoData` / `demo:trigger` from the `contracts` workspace
 4. Sync env → configure `app/.env` → `npm run dev`
 
-**Manual smoke trigger (no reactivity):** `ReactiveAutopilotHandler.runJobManually` is **owner-only**; use the deployer wallet in the UI or `contracts/scripts/triggerDemo.ts`.
+**Manual smoke trigger (no reactivity):** `ReactiveAutopilotHandler.runJobManually` allows the **reactive handler owner** or the **job’s on-chain creator**; use either wallet in the UI or `contracts/scripts/triggerDemo.ts` (deployer).
 
 ## Quality checks
 

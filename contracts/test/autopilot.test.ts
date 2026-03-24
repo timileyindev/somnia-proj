@@ -238,4 +238,63 @@ describe("Somnia Autopilot contracts", async () => {
 
     assert.equal(await mock.read.rebalanceCount(), 1n);
   });
+
+  it("ReactiveAutopilotHandler.runJobManually allows job creator or handler owner", async () => {
+    const registry = await viem.deployContract("AutomationRegistry", [deployer!.account.address]);
+    const orchestrator = await viem.deployContract("WorkflowOrchestrator", [deployer!.account.address]);
+    const handler = await viem.deployContract("ReactiveAutopilotHandler", [
+      registry.address,
+      orchestrator.address,
+      deployer!.account.address,
+    ]);
+    const mock = await viem.deployContract("MockProtocolController");
+
+    await registry.write.setOperator([handler.address, true]);
+    await orchestrator.write.setExecutor([handler.address, true]);
+
+    const steps = [
+      {
+        target: mock.address,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: mock.abi,
+          functionName: "activateProtectionMode",
+        }),
+        allowFailure: false,
+        label: "step",
+      },
+    ] as const;
+    await orchestrator.write.createWorkflow(["manual-creator", steps], { account: deployer!.account });
+
+    const wallets = await viem.getWalletClients();
+    const jobCreator = wallets[1];
+    const stranger = wallets[2];
+    assert.ok(jobCreator && stranger, "need extra wallets");
+
+    await registry.write.createJob(
+      [
+        {
+          name: "creator job",
+          triggerType: 3,
+          emitter: deployer!.account.address,
+          topic0: keccak256(stringToBytes("E()")),
+          triggerValue: 0n,
+          workflowId: 1n,
+          cooldownSeconds: 0n,
+          active: true,
+        },
+      ],
+      { account: jobCreator.account },
+    );
+
+    const ctx = keccak256(stringToBytes("manual-test"));
+
+    await assert.rejects(
+      handler.write.runJobManually([1n, ctx], { account: stranger.account }),
+    );
+
+    const txOk = await handler.write.runJobManually([1n, ctx], { account: jobCreator.account });
+    await publicClient.waitForTransactionReceipt({ hash: txOk });
+    assert.equal(await mock.read.protectionMode(), true);
+  });
 });
