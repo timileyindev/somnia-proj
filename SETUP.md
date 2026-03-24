@@ -27,6 +27,22 @@ Copy `contracts/.env.example` → `contracts/.env` and set:
 | `SOMNIA_CHAIN_ID` | e.g. `50312` (must match the network) |
 | `SOMNIA_PRIVATE_KEY` | Deployer private key (`0x…`) — used for deploy and scripts |
 
+**Gas & funding (official docs):** [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration) documents `priorityFeePerGas`, `maxFeePerGas`, and `gasLimit` (use `parseGwei()` for fee fields; base fee ~6 gwei / nanoSOMI-scale). The same page’s **Cost Estimation** section states the subscription owner must keep **at least 32 SOMI**. [Subscription management](https://docs.somnia.network/developer/reactivity/tooling/subscription-management) repeats that on-chain subs need funding (**32+ SOMI**) and shows the same `createSoliditySubscription` shape.
+
+**This repo’s env helper:** `REACTIVITY_MAX_FEE_GWEI` of **`0` or empty** is treated as **`10` gwei** (`parseGwei`), matching the gas doc examples and avoiding `@somnia-chain/reactivity`’s rejection of `maxFeePerGas === 0`.
+
+### How this repo maps to Somnia reactivity tutorials
+
+| Doc | We use it? | Role in this project |
+|-----|------------|----------------------|
+| [Wildcard off-chain reactivity](https://docs.somnia.network/developer/reactivity/tutorials/wildcard-off-chain-reactivity-tutorial) | No | **Off-chain** WebSocket `sdk.subscribe()` — not used by `setup-subscriptions` or the autopilot contracts. |
+| [Off-chain filtered subscriptions](https://docs.somnia.network/developer/reactivity/tutorials/off-chain-reactivity-filtered-subscriptions-tutorial) | No | Same: WS push to a **TypeScript** app; different from our **on-chain** handler path. |
+| [Solidity on-chain reactivity](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial) | **Yes** | Handler inherits `SomniaEventHandler`; subscriptions via `SDK.createSoliditySubscription` with `emitter` + `eventTopics` (Step 4). We use `somniaTestnet` from `viem/chains` + your RPC, same idea as the snippet. |
+| [Cron subscriptions via SDK](https://docs.somnia.network/developer/reactivity/tutorials/cron-subscriptions-via-sdk) | **Yes** | We call `createOnchainBlockTickSubscription` and `scheduleOnchainCronJob` (wrappers over the same precompile `subscribe`). Raw `BigInt` examples there (e.g. `1e9`, `20e9`) are the same **nanoSOMI / gwei-scale wei** values as `parseGwei('1')` / `parseGwei('20')`. |
+| [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration) | **Yes** | Source of truth for fee fields and recommended magnitudes; aligns with our `reactivityGasFromEnv()` + `parseGwei`. |
+| [On-chain (Solidity) tooling](https://docs.somnia.network/developer/reactivity/tooling/on-chain-solidity) | **Yes** | Precompile `0…0100`, `SubscriptionData`, validation: **at least one** of `eventTopics`, `origin`, or `emitter` non-zero; handler non-zero; `gasLimit > 0`. Our health/metric subs set **emitter + topic0**; block tick / schedule use system events via the SDK helpers. |
+| [Subscription management](https://docs.somnia.network/developer/reactivity/tooling/subscription-management) | **Yes** | Describes the same on-chain `SoliditySubscriptionData` / `createSoliditySubscription` / `getSubscriptionInfo` / `cancelSoliditySubscription` model we rely on. |
+
 Optional (used when registering reactivity subscriptions):
 
 | Variable | Notes |
@@ -76,6 +92,14 @@ npm run contracts:setup-subscriptions
 ```
 
 This reads `latest.json`, uses `@somnia-autopilot/sdk` to create the standard autopilot subscriptions, and writes **`contracts/deployments/subscriptions.latest.json`**.
+
+**What the script does (same path as Somnia docs):**
+
+1. Build viem clients with **`somniaTestnet` from `viem/chains`** plus your `SOMNIA_RPC_URL` (see [Solidity on-chain reactivity tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial), Step 4).
+2. Preflight: RPC `chainId` matches `SOMNIA_CHAIN_ID`, handler and emitter have code, handler passes `supportsInterface` for ERC-165 and `ISomniaEventHandler`.
+3. Call **`@somnia-chain/reactivity` → `SDK.createSoliditySubscription(...)`**, which performs `writeContract` on the precompile at **`0x0000000000000000000000000000000000000100`** with function **`subscribe(SubscriptionData)`** — identical to the SDK snippet in that tutorial.
+
+If `subscribe` still reverts after preflight passes, cross-check [gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration), **32+ SOMI** on the subscriber ([Solidity on-chain tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial), [subscription management](https://docs.somnia.network/developer/reactivity/tooling/subscription-management)), and duplicate / stale subscriptions. There is no alternate subscribe API in this repo beyond `@somnia-chain/reactivity` → precompile `subscribe`.
 
 **Minimum path after a fresh deploy:** deploy → **then** run `setup-subscriptions`. Without subscriptions, the reactive pipeline will not behave as intended on testnet.
 

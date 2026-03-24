@@ -27,7 +27,7 @@ The app uses **[RainbowKit](https://www.rainbowkit.com)** on **[wagmi v2](https:
 ## Prerequisites
 
 - Node.js 20+
-- A funded Somnia testnet account (see [Somnia reactivity docs](https://docs.somnia.network/developer/reactivity/quickstart) for balance / gas notes)
+- A **funded** Somnia testnet account for `contracts/.env` (deploy + `setup-subscriptions` txs). For subscription gas parameters, follow [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration) (`maxFeePerGas`, `gasLimit`, etc.)
 - A browser wallet (e.g. MetaMask) and a **Reown (WalletConnect) project ID** for RainbowKit (`VITE_WALLETCONNECT_PROJECT_ID` in `app/.env`)
 
 ## 1. Install

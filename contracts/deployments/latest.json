@@ -1,0 +1,13 @@
+{
+  "chainId": 50312,
+  "networkName": "somniaTestnet",
+  "deployer": "0xe09f39ffc6e37c85e62d724b9880406b42f42f3a",
+  "deployedAt": "2026-03-24T10:36:20.167Z",
+  "contracts": {
+    "automationRegistry": "0xe1d12a6c2ecbb96bd34917ae50a8cdb293e71e87",
+    "workflowOrchestrator": "0x51ab0b97ac1a0571f9d4ad3505daaf703ea521f8",
+    "reactiveAutopilotHandler": "0x1f740a68662a8865da728049da167f876d425a41",
+    "mockProtocolController": "0x823d2d5080f258e6dd1cb763a766ab4bf2acde8f",
+    "mockSignalEmitter": "0xff45d31246b64a337394f420e82845373ebf905b"
+  }
+}

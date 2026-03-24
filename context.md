@@ -73,7 +73,7 @@ Technical choices that align with Somnia Reactivity docs
 •  Set gas conservatively (many teams fail here):
 ◦  start around maxFeePerGas ~10 gwei equivalent
 ◦  gasLimit at least around 2,000,000 for state writes; more for orchestration.
-•  Ensure subscription owner keeps minimum required SOMI balance (docs note 32 SOMI).
+•  Align reactivity subscription gas with Somnia gas-configuration doc; `@somnia-chain/reactivity-contracts` defines a 32 ether minimum-balance constant in `SomniaExtensions`.
 •  Reactivity is currently on Somnia testnet, so demo and deployment should target testnet only.
 
 
