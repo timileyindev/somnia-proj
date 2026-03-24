@@ -1,135 +1,262 @@
 # Somnia Autopilot
 
-Hackathon-ready **chain-native automation** demo: scheduler-style triggers (Schedule / BlockTick / EpochTick), **alert rules** on contract events, and a **multi-step workflow orchestrator**—wired to **Somnia Reactivity** via `ReactiveAutopilotHandler`.
+**Somnia Autopilot** is a hackathon-ready reference stack for **on-chain automation** on [Somnia](https://docs.somnia.network): time- and block-driven **jobs**, **alert rules** on contract logs, and **multi-step workflows**—all triggered through **Somnia Reactivity** into a single **`ReactiveAutopilotHandler`** contract.
 
-### What is “real” on-chain vs mock?
+The repo ships three pieces that work together:
 
-| Layer | Real deployed contracts? | What happens |
-|-------|---------------------------|--------------|
-| **AutomationRegistry** | Yes | Stores jobs and alerts; **`recordJobExecution`** / **`recordAlertTrigger`** update counters when the handler reports a run. |
-| **ReactiveAutopilotHandler** | Yes | Somnia calls **`onEvent`** (only from the reactivity precompile). It matches jobs/alerts, runs workflows, and updates the registry. **`JobTriggered`** / **`AlertRaised`** (and related) events fire from this contract. |
-| **WorkflowOrchestrator** | Yes | **`executeWorkflow`** does real **`call`**s to each step’s `target` with your calldata; successes/failures and **`WorkflowExecuted`** / step events are real. |
-| **MockSignalEmitter** | Stand-in | Only **pretends** to be an external protocol emitting events. The **emission and logs are real**; the **business meaning** is fake. |
-| **MockProtocolController** | Stand-in | **Real contract code**, but it only toggles counters / emits demo events instead of talking to Aave, etc. Workflows that point at it **really execute** those calls. |
+1. **Solidity contracts** — registry, orchestrator, reactive handler, and demo “protocol” stand-ins.  
+2. **TypeScript SDK** (`@somnia-autopilot/sdk`) — deployment types, gas helpers, and standard **reactivity subscriptions** (mock emitter + system ticks + schedule).  
+3. **Web dashboard** — Vite + React + RainbowKit to create jobs, alerts, and workflows and to inspect on-chain state.
 
-So: **orchestration, registry accounting, and handler logic are genuine.** The **only “fake” pieces** are the *pretend protocol* contracts you wire in for the demo. After you run **`setup:subscriptions`**, **Schedule / BlockTick / and mock-emitter events** can invoke the handler on testnet the same as production would—subject to Somnia reactivity, gas, and balances.
+For a **step-by-step deploy and env walkthrough** (including Somnia doc cross-references and troubleshooting), see **[SETUP.md](./SETUP.md)**.
 
-The app uses **[RainbowKit](https://www.rainbowkit.com)** on **[wagmi v2](https://wagmi.sh)** for the connect modal (MetaMask, WalletConnect, injected wallets, etc.). Add a free **`VITE_WALLETCONNECT_PROJECT_ID`** from [Reown Cloud](https://cloud.reown.com) in `app/.env` so WalletConnect and the full modal work reliably; reads still use **`VITE_RPC_URL`**.
+---
+
+## Table of contents
+
+- [How the platform works](#how-the-platform-works)
+- [Monorepo layout](#monorepo-layout)
+- [Contracts](#contracts)
+- [SDK](#sdk)
+- [Dashboard](#dashboard)
+- [Getting started](#getting-started)
+- [Configuration cheat sheet](#configuration-cheat-sheet)
+- [Useful commands](#useful-commands)
+- [Development and quality checks](#development-and-quality-checks)
+- [Replacing demo contracts](#replacing-demo-contracts)
+- [References](#references)
+
+---
+
+## How the platform works
+
+Somnia **subscriptions** tell the network which logs should be delivered to your **handler** contract. This project’s handler is **`ReactiveAutopilotHandler`**: the chain calls its `onEvent` entrypoint (from the reactivity precompile). The handler then:
+
+- Reads **jobs** and **alert rules** from **`AutomationRegistry`** (filtering by emitter, `topic0`, trigger type, etc.).  
+- When a job or alert fires, it runs the linked workflow via **`WorkflowOrchestrator.executeWorkflow`**, which performs real `call`s to each step.  
+- Writes execution results back to the registry (`recordJobExecution`, `recordAlertTrigger`, etc.) and emits events you can index or show in the UI.
+
+So there are **two layers of filtering**:
+
+| Layer | What it does |
+|--------|----------------|
+| **Reactivity subscription** | Somnia → forwards matching logs into `ReactiveAutopilotHandler.onEvent`. |
+| **Registry job / alert** | Handler → decides whether this log should run *your* workflow for *your* job or alert. |
+
+If no subscription covers an emitter/topic combination, the handler never sees those logs—**jobs with wildcards still need a matching subscription path on-chain**.
+
+After **`npm run contracts:setup-subscriptions`**, the default setup registers subscriptions for **HealthSignal** and **MetricSignal** on the mock emitter, plus **BlockTick**, **EpochTick**, and a one-off **Schedule** (see [SETUP.md](./SETUP.md) for details and Somnia quirks).
+
+---
 
 ## Monorepo layout
 
-| Package | Role |
-|--------|------|
-| `contracts/` | Solidity (`AutomationRegistry`, `ReactiveAutopilotHandler`, `WorkflowOrchestrator`, mock protocol + signal contracts), Hardhat, deploy & demo scripts |
-| `sdk/` | `@somnia-autopilot/sdk` — typed helpers for gas config, deployment JSON, and standard reactivity subscriptions |
-| `app/` | Vite + React + Tailwind dashboard (analytics, filters, drawers, job/alert/workflow management) |
+| Path | Package | Purpose |
+|------|---------|---------|
+| `contracts/` | `@somnia-autopilot/contracts` | Hardhat, Solidity sources, deploy / subscription / demo scripts, `deployments/latest.json`. |
+| `sdk/` | `@somnia-autopilot/sdk` | Shared TypeScript library for scripts and tooling: viem + `@somnia-chain/reactivity` wrappers. |
+| `app/` | `@somnia-autopilot/app` | Operator dashboard: RainbowKit, tables, charts, drawers, job/alert/workflow CRUD against deployed contracts. |
 
-## Prerequisites
+Root **`package.json`** defines workspace scripts (e.g. `contracts:deploy`, `dev`) so you usually run commands from the **repository root**.
 
-- Node.js 20+
-- A **funded** Somnia testnet account for `contracts/.env` (deploy + `setup-subscriptions` txs). For subscription gas parameters, follow [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration) (`maxFeePerGas`, `gasLimit`, etc.)
-- A browser wallet (e.g. MetaMask) and a **Reown (WalletConnect) project ID** for RainbowKit (`VITE_WALLETCONNECT_PROJECT_ID` in `app/.env`)
+---
 
-## 1. Install
+## Contracts
+
+Deployed by **`contracts/scripts/deploy.ts`** on Somnia testnet (see [SETUP.md](./SETUP.md) §3). Output addresses land in **`contracts/deployments/latest.json`**.
+
+| Contract | Role |
+|----------|------|
+| **AutomationRegistry** | Stores jobs and alerts; tracks runs, cooldowns, and counters. |
+| **WorkflowOrchestrator** | Executes ordered workflow steps (`executeWorkflow`) with real external calls. |
+| **ReactiveAutopilotHandler** | Implements Somnia’s reactive handler interface; `onEvent` is the entry from the precompile. Also supports **`runJobManually`** for owner/creator smoke tests without a live reactive event. |
+| **MockSignalEmitter** | Demo contract emitting **HealthSignal** / **MetricSignal** events—stand-in for an external protocol’s logs. |
+| **MockProtocolController** | Demo callee for workflow steps (counters / demo behavior), stand-in for real integrations. |
+
+### What is “real” on-chain vs mock?
+
+| Piece | On-chain reality |
+|--------|------------------|
+| Registry, orchestrator, handler | Fully real: storage, access control, events, and calls behave as in production-style code. |
+| Reactivity path | Real: subscriptions and precompile `subscribe` are the same model as [Somnia’s on-chain reactivity docs](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial). |
+| Mock emitter / mock controller | **Real bytecode and real logs/calls**, but **fake business semantics**—replace addresses when you integrate a real protocol. |
+
+---
+
+## SDK
+
+Package: **`@somnia-autopilot/sdk`** (private workspace). Consumed by Hardhat scripts (e.g. `setupSubscriptions.ts`) and other Node tooling; **not** required in the browser app for normal dashboard use.
+
+**Build before first script run:**
 
 ```bash
-npm install
 npm run sdk:build
 ```
 
-## 2. Configure contracts (deployer)
+### Responsibilities
 
-Copy `contracts/.env.example` → `contracts/.env` and set:
+- **Types** — `DeploymentManifest`, `ReactivityGasConfig`, `StandardSubscriptionSummary`.  
+- **Chain / clients** — `somniaChainFor`, `createAutopilotSdk`, `normalizePrivateKey`, `baseSoliditySubscription`.  
+- **Gas from env** — `reactivityGasFromEnv()` (aligns with [Somnia gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration)).  
+- **Standard subscriptions** — `createStandardAutopilotSubscriptions`:  
+  - Mock emitter: **`createSoliditySubscription`** with explicit **HealthSignal** / **MetricSignal** topics.  
+  - Block tick, epoch tick, schedule: **`subscribeViaPrecompile`** (workaround for `@somnia-chain/reactivity` 0.1.10 rejecting the precompile as `emitter` in `createSoliditySubscription`).  
+- **Preflight** — `assertReactivitySubscribePreflight` (chain ID, code, ERC-165 / `ISomniaEventHandler`, balance warning vs **32+ SOMI** guidance from docs).  
+- **Low-level helpers** — `subscribeViaPrecompile`, `SOMNIA_REACTIVITY_PRECOMPILE`, `systemEventTopics` (`blockTickTopic0`, `epochTickTopic0`, `scheduleTopic0`, …).
 
-- `SOMNIA_RPC_URL` — Somnia testnet HTTP RPC
-- `SOMNIA_CHAIN_ID` — e.g. `50312` (match your network)
-- `SOMNIA_PRIVATE_KEY` — hex private key for deployment and scripts (keep secret)
+Public exports are listed in **`sdk/src/index.ts`**.
 
-Optional tuning (used by `setup:subscriptions`):
+---
 
-- `REACTIVITY_MAX_FEE_GWEI` (default `10`)
-- `REACTIVITY_GAS_LIMIT` (default `3000000`)
-- `SCHEDULE_DELAY_MS` (default `90000`) — one-off Schedule callback delay
+## Dashboard
 
-## 3. Deploy (testnet)
+Path: **`app/`**. Package: **`@somnia-autopilot/app`**.
 
-```bash
-npm run contracts:deploy
-```
+- **Stack:** Vite, React, Tailwind CSS, **wagmi v2**, **RainbowKit** (MetaMask, WalletConnect, injected wallets).  
+- **WalletConnect:** set **`VITE_WALLETCONNECT_PROJECT_ID`** from [Reown Cloud](https://cloud.reown.com) in `app/.env`.  
+- **Read RPC:** **`VITE_RPC_URL`** (can match your public Somnia RPC).  
+- **Small viewports:** below the `lg` breakpoint (~1024px), only a **“Please use a larger screen”** message is shown; the main dashboard is hidden so tables and drawers stay usable on desktop-sized layouts.  
+- **In-app help:** use the **Guide** control in the header for a walkthrough of each screen.
 
-Writes `contracts/deployments/latest.json` with all contract addresses.
+Contract addresses come from **`contracts/deployments/latest.json`** via **`npm run contracts:sync-vite-env`** (or `emitViteEnv.ts --write`); paste into **`app/.env`** per [SETUP.md](./SETUP.md) §7.
 
-## 4. Reactivity subscriptions
+---
 
-After deploy, register Solidity subscriptions (HealthSignal + MetricSignal on the mock emitter, BlockTick, EpochTick, and a one-off Schedule — see `SETUP.md`):
+## Getting started
 
-```bash
-npm run contracts:setup-subscriptions
-```
+**Prerequisites**
 
-Summary is saved to `contracts/deployments/subscriptions.latest.json`.
+- Node.js **20+**  
+- A **funded** Somnia testnet account for deploy and subscription transactions  
+- Optional: browser wallet + Reown project ID for the dashboard  
 
-## 5. Seed demo registry data (optional)
+**End-to-end path (short version)**
 
-Creates a sample workflow, external-event job, and metric alert (uses addresses from `latest.json`):
+1. **Install and build the SDK**
 
-```bash
-cd contracts && npx hardhat run scripts/seedDemoData.ts --network somniaTestnet
-```
+   ```bash
+   npm install
+   npm run sdk:build
+   ```
 
-## 6. Configure the app
+2. **Configure the deployer** — copy `contracts/.env.example` → `contracts/.env` and set `SOMNIA_RPC_URL`, `SOMNIA_CHAIN_ID`, `SOMNIA_PRIVATE_KEY`. Optional: `REACTIVITY_MAX_FEE_GWEI`, `REACTIVITY_GAS_LIMIT`, `SCHEDULE_DELAY_MS`.
 
-Generate `VITE_*` contract lines from `latest.json`:
+3. **Deploy contracts**
 
-```bash
-npm run contracts:sync-vite-env
-```
+   ```bash
+   npm run contracts:deploy
+   ```
 
-To write `app/.env.contracts` automatically:
+   Produces **`contracts/deployments/latest.json`**.
+
+4. **Register reactivity subscriptions** (required for reactive triggers on testnet)
+
+   ```bash
+   npm run contracts:setup-subscriptions
+   ```
+
+   Writes **`contracts/deployments/subscriptions.latest.json`**. If `subscribe` reverts, see [SETUP.md](./SETUP.md) §5 (gas, **32+ SOMI** balance, duplicate subscriptions).
+
+5. **Optional demo data**
+
+   ```bash
+   cd contracts && npm run demo:seed
+   ```
+
+   Or create jobs, alerts, and workflows entirely from the dashboard.
+
+6. **Point the app at your deployment**
+
+   ```bash
+   npm run contracts:sync-vite-env
+   ```
+
+   Merge printed `VITE_*` lines into **`app/.env`** (see `app/.env.example`). Set **`VITE_CHAIN_ID`**, **`VITE_RPC_URL`**, **`VITE_WALLETCONNECT_PROJECT_ID`**.
+
+7. **Run the dashboard**
+
+   ```bash
+   npm run dev
+   ```
+
+   Open the URL Vite prints (typically `http://localhost:5173`), switch to the configured chain, connect a wallet.
+
+**Manual job execution (no reactive event):** `ReactiveAutopilotHandler.runJobManually` is allowed for the **handler owner** or the **job’s on-chain creator**—exposed in the UI and in **`contracts/scripts/triggerDemo.ts`**.
+
+---
+
+## Configuration cheat sheet
+
+### `contracts/.env` (deployer / scripts)
+
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `SOMNIA_RPC_URL` | Yes | HTTP RPC for Somnia testnet. |
+| `SOMNIA_CHAIN_ID` | Yes | Must match the network (e.g. `50312`). |
+| `SOMNIA_PRIVATE_KEY` | Yes | `0x`-prefixed key; keep secret. |
+| `REACTIVITY_MAX_FEE_GWEI` | No | Default `10`; `0`/empty treated as `10` gwei. |
+| `REACTIVITY_GAS_LIMIT` | No | Default `3000000`. |
+| `SCHEDULE_DELAY_MS` | No | One-off schedule delay; default `90000`. |
+
+### `app/.env` (dashboard)
+
+| Variable | Purpose |
+|----------|---------|
+| `VITE_RPC_URL` | Public RPC for reads and wallet RPC where applicable. |
+| `VITE_CHAIN_ID` | Same chain as contracts. |
+| `VITE_*_ADDRESS` | Registry, orchestrator, handler, mock emitter, mock controller (from sync script). |
+| `VITE_WALLETCONNECT_PROJECT_ID` | RainbowKit / WalletConnect. |
+| `VITE_EXPLORER_BASE_URL` | Optional explorer links. |
+
+---
+
+## Useful commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start the Vite dashboard. |
+| `npm run contracts:deploy` | Deploy all contracts to Somnia testnet. |
+| `npm run contracts:setup-subscriptions` | Create standard handler subscriptions. |
+| `npm run contracts:sync-vite-env` | Print `VITE_*` lines from `latest.json`. |
+| `npm run sdk:build` | Compile `@somnia-autopilot/sdk`. |
+| `npm run build` | SDK + app build + contract compile (root script). |
+| `cd contracts && npm run demo:seed` | Seed sample workflow / job / alert. |
+| `cd contracts && npm run demo:trigger` | Run demo contract calls (`triggerDemo.ts`). |
+
+Writing **`app/.env.contracts`** automatically:
 
 ```bash
 cd contracts && npx hardhat run scripts/emitViteEnv.ts --network hardhatMainnet -- --write
 ```
 
-Copy `app/.env.example` → `app/.env` (or merge `.env.contracts` into it) and set:
+---
 
-- `VITE_RPC_URL` — **public** RPC (can match `SOMNIA_RPC_URL`)
-- `VITE_WALLETCONNECT_PROJECT_ID` — from [Reown Cloud](https://cloud.reown.com) (RainbowKit / WalletConnect)
-- `VITE_CHAIN_ID` — same as `SOMNIA_CHAIN_ID`
-- `VITE_EXPLORER_BASE_URL` — block explorer base (optional, for links)
-- All `VITE_*_ADDRESS` values from the sync output
-
-## 7. Run the dashboard
+## Development and quality checks
 
 ```bash
-npm run dev
-```
-
-Open the URL Vite prints (usually `http://localhost:5173`). Connect a wallet on the configured chain to create jobs/alerts/workflows and trigger demo actions.
-
-## 8. Demo script order (quick reference)
-
-1. `npm run contracts:deploy`
-2. `npm run contracts:setup-subscriptions`
-3. (Optional) `seedDemoData` / `demo:trigger` from the `contracts` workspace
-4. Sync env → configure `app/.env` → `npm run dev`
-
-**Manual smoke trigger (no reactivity):** `ReactiveAutopilotHandler.runJobManually` allows the **reactive handler owner** or the **job’s on-chain creator**; use either wallet in the UI or `contracts/scripts/triggerDemo.ts` (deployer).
-
-## Quality checks
-
-```bash
-npm run build          # sdk + app + compile contracts
+npm run build
 npm run test --workspace=@somnia-autopilot/contracts
 npm run lint --workspaces --if-present
 ```
 
-## Mock contracts
+Solidity tests live under **`contracts/test/`** (e.g. registry, orchestrator, handler).
 
-`MockSignalEmitter` and `MockProtocolController` are **stand-ins** for real protocol addresses so the same registry / handler / orchestrator path runs end-to-end on testnet without integrating external DeFi. Replace their addresses in workflows and subscriptions when targeting real emitters and callees.
+---
+
+## Replacing demo contracts
+
+- Point **subscriptions** (via your own script or a fork of `createStandardAutopilotSubscriptions`) at your protocol’s **emitter** and **event topic** hashes.  
+- Point **jobs** and **alerts** at the same emitter/`topic0` your subscriptions deliver.  
+- Point **workflow steps** at real **target** contracts and **calldata** instead of `MockProtocolController`.  
+- Re-run **`setup-subscriptions`** (or equivalent) after redeploying the handler or changing subscription shape; cancel stale subscriptions on-chain if you duplicate them.
+
+---
 
 ## References
 
-- [Somnia Reactivity](https://docs.somnia.network/developer/reactivity/what-is-reactivity)
-- [Subscriptions](https://docs.somnia.network/developer/reactivity/subscriptions-the-core-primitive)
-- [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration)
+- **[SETUP.md](./SETUP.md)** — Detailed setup, Somnia tutorial mapping, subscription troubleshooting.  
+- [What is reactivity?](https://docs.somnia.network/developer/reactivity/what-is-reactivity)  
+- [Subscriptions (core primitive)](https://docs.somnia.network/developer/reactivity/subscriptions-the-core-primitive)  
+- [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration)  
+- [Solidity on-chain reactivity tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial)  
+- [RainbowKit](https://www.rainbowkit.com) · [wagmi](https://wagmi.sh)
