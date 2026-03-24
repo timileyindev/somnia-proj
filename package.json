@@ -1,0 +1,30 @@
+{
+  "name": "somnia-autopilot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Somnia Autopilot hackathon project",
+  "workspaces": [
+    "app",
+    "contracts",
+    "sdk"
+  ],
+  "scripts": {
+    "app:dev": "npm run dev --workspace=@somnia-autopilot/app",
+    "app:build": "npm run build --workspace=@somnia-autopilot/app",
+    "contracts:compile": "npm run compile --workspace=@somnia-autopilot/contracts",
+    "contracts:deploy": "npm run deploy --workspace=@somnia-autopilot/contracts",
+    "contracts:setup-subscriptions": "npm run setup:subscriptions --workspace=@somnia-autopilot/contracts",
+    "sdk:build": "npm run build --workspace=@somnia-autopilot/sdk",
+    "contracts:sync-vite-env": "npm run sync:vite-env --workspace=@somnia-autopilot/contracts",
+    "contracts:test": "npm run test --workspace=@somnia-autopilot/contracts",
+    "build": "npm run sdk:build && npm run app:build && npm run contracts:compile",
+    "lint": "npm run lint --workspaces",
+    "dev": "npm run dev --workspace=@somnia-autopilot/app"
+  },
+  "keywords": [
+    "somnia",
+    "reactivity",
+    "automation"
+  ],
+  "license": "MIT"
+}

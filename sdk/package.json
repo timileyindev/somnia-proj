@@ -1,0 +1,24 @@
+{
+  "name": "@somnia-autopilot/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Somnia Reactivity helpers and deployment types for Somnia Autopilot",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@somnia-chain/reactivity": "^0.1.10",
+    "viem": "^2.47.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.0"
+  }
+}
