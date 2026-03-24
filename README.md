@@ -1,24 +1,24 @@
 # Somnia Autopilot
 
-This project is a **full automation platform built on Somnia**.
+Somnia Autopilot is an **on-chain automation platform for the Somnia network**.
 
-It combines:
-- a smart-contract automation core,
-- an SDK for developer scripting and setup,
-- and a built-in dashboard for monitoring and control.
+It provides a complete automation stack where teams can define **what should run** (workflows), **when it should run** (jobs and alerts), and **how it should be monitored** (dashboard + run history), all on top of Somnia Reactivity.
 
-The goal is simple: make it easy to run **reliable on-chain automation** using Somnia Reactivity, without every team rebuilding the same infrastructure from scratch.
+The project is organized into three core parts:
+- a Solidity automation core (`AutomationRegistry`, `ReactiveAutopilotHandler`, `WorkflowOrchestrator`),
+- an SDK (`@somnia-autopilot/sdk`) for setup and scripting,
+- and a built-in dashboard for day-to-day operations.
 
-## 🚀 What You Built
+Instead of rebuilding low-level automation plumbing for each use case, this project gives a reusable baseline for event-driven, schedule-driven, and recurring automation flows on Somnia.
 
-**Somnia Autopilot** gives users a complete loop:
+## 📌 Overview
 
-- define **workflows** (what to execute),
-- define **jobs and alerts** (when to execute),
-- connect reactive events and system ticks,
-- monitor results from one interface.
+Somnia Autopilot is designed to support a practical lifecycle:
 
-It is designed for practical automation use cases like scheduled actions, event-driven triggers, and recurring health checks.
+- define workflows as multi-step on-chain actions,
+- attach jobs and alerts to trigger those workflows,
+- connect the system to Somnia reactivity subscriptions,
+- monitor execution outcomes from one interface.
 
 ## ⚙️ How It Works
 
