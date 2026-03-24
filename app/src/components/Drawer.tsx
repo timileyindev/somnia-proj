@@ -5,7 +5,7 @@ type DrawerProps = {
   title: string
   onClose: () => void
   children: ReactNode
-  /** Wider panel for long-form content (e.g. dashboard guide). */
+  /** Wider panel for long-form content (e.g. dashboard guide). -- */
   wide?: boolean
 }
 
