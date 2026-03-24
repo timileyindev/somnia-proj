@@ -5,6 +5,7 @@ import type { DeploymentManifest, ReactivityGasConfig, StandardSubscriptionSumma
 import { baseSoliditySubscription } from "./client.js";
 import { subscribeViaPrecompile } from "./subscribePrecompile.js";
 import { SOMNIA_REACTIVITY_PRECOMPILE } from "./somniaPrecompile.js";
+import { healthSignalTopic, metricSignalTopic } from "./topics.js";
 import {
   blockTickTopic0,
   epochTickTopic0,
@@ -30,19 +31,16 @@ export type CreateStandardSubscriptionsParams = {
 };
 
 /**
- * Creates the default hackathon subscriptions: all events from the mock emitter (wildcard topics),
- * BlockTick, and one Schedule.
+ * Creates the default hackathon subscriptions: **HealthSignal** and **MetricSignal** on the mock
+ * emitter (explicit `topic0` each), **BlockTick**, **EpochTick**, and one **Schedule**.
  *
- * Omitting `eventTopics` lets `@somnia-chain/reactivity` pad `eventTopics` to four `bytes32(0)`
- * entries, which match any log topics from that emitter. Separate per-signature subscriptions are
- * not required for HealthSignal vs MetricSignal, and jobs/alerts still filter by `topic0` in the
- * handler. Do **not** confuse that with passing `[zeroHash]` as the only topic — that would only
- * match logs whose first topic is literally zero (no standard Solidity events do that).
+ * Do **not** subscribe to a normal contract with four `bytes32(0)` topics — Somnia’s precompile
+ * rejects that shape (revert). Wildcard “any event on this emitter” must be done with explicit
+ * per-signature subs or whatever the network documents; here we use the two demo events.
  *
  * **Block tick, epoch tick, schedule:** `@somnia-chain/reactivity` 0.1.10’s `createSoliditySubscription`
- * returns `"Emitter cannot be set to the precompile"` when `emitter` is `0x…0100`, which breaks
- * `createOnchainBlockTickSubscription` and `scheduleOnchainCronJob`. Those are sent here via
- * `subscribeViaPrecompile` using the same `SubscriptionData` shape as the official Solidity examples.
+ * returns `"Emitter cannot be set to the precompile"` when `emitter` is `0x…0100`. Those use
+ * `subscribeViaPrecompile` instead.
  */
 export async function createStandardAutopilotSubscriptions(
   params: CreateStandardSubscriptionsParams,
@@ -52,12 +50,22 @@ export async function createStandardAutopilotSubscriptions(
   const handlerContractAddress = deployment.contracts.reactiveAutopilotHandler;
   const common = baseSoliditySubscription(handlerContractAddress, gas);
 
-  const mockEmitterSubscriptionTx = throwIfError(
+  const healthSignalSubscriptionTx = throwIfError(
     await sdk.createSoliditySubscription({
       ...common,
       emitter: deployment.contracts.mockSignalEmitter,
+      eventTopics: [healthSignalTopic],
     }),
-    "Failed to create mock signal emitter (all events) subscription",
+    "Failed to create HealthSignal subscription",
+  );
+
+  const metricSignalSubscriptionTx = throwIfError(
+    await sdk.createSoliditySubscription({
+      ...common,
+      emitter: deployment.contracts.mockSignalEmitter,
+      eventTopics: [metricSignalTopic],
+    }),
+    "Failed to create MetricSignal subscription",
   );
 
   const blockTickSubscriptionTx = await subscribeViaPrecompile(walletClient, {
@@ -113,7 +121,8 @@ export async function createStandardAutopilotSubscriptions(
     createdAt: new Date().toISOString(),
     handlerContractAddress,
     subscriptions: {
-      mockSignalEmitterTx: mockEmitterSubscriptionTx,
+      healthSignalTx: healthSignalSubscriptionTx,
+      metricSignalTx: metricSignalSubscriptionTx,
       blockTickTx: blockTickSubscriptionTx,
       epochTickTx: epochTickSubscriptionTx,
       scheduleTx: scheduleSubscriptionTx,

@@ -37,6 +37,7 @@ import { useAccount } from 'wagmi'
 import { appConfig, hasCoreAddresses } from './config'
 import { CopyableAddress } from './components/CopyableAddress'
 import { DashboardGuideDrawer } from './components/DashboardGuideDrawer'
+import { SmallScreenNotice } from './components/SmallScreenNotice'
 import { Drawer } from './components/Drawer'
 import { ErrorToast } from './components/ErrorToast'
 import { RunTimeline } from './components/RunTimeline'
@@ -892,6 +893,8 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
+      <SmallScreenNotice />
+      <div className="hidden lg:block">
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 lg:px-8">
         <header className="rounded-2xl border border-slate-800 bg-gradient-to-br from-indigo-900/50 via-slate-900 to-slate-950 p-6 shadow-2xl shadow-black/30">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -2305,6 +2308,7 @@ function App() {
         onClose={() => setDashboardGuideOpen(false)}
       />
       <ErrorToast message={error} onDismiss={() => setError(null)} />
+      </div>
     </div>
   )
 }
