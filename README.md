@@ -1,38 +1,90 @@
 # Somnia Autopilot
 
-This project is a **Somnia hackathon automation stack**: Solidity contracts that receive [Somnia Reactivity](https://docs.somnia.network/developer/reactivity/what-is-reactivity) events, match **jobs** and **alerts** in an on-chain registry, and execute **multi-step workflows** via an orchestrator. It includes **`@somnia-autopilot/sdk`** for deploy/subscription scripts and a **React dashboard** to manage and inspect deployments.
+This project is a **full automation platform built on Somnia**.
 
-## How it works
+It combines:
+- a smart-contract automation core,
+- an SDK for developer scripting and setup,
+- and a built-in dashboard for monitoring and control.
 
-On-chain **subscriptions** (created with the SDK or Hardhat scripts) route matching logs and system ticks into **`ReactiveAutopilotHandler`**. The handler reads **`AutomationRegistry`** and, when a job or alert matches the event, runs the linked workflow through **`WorkflowOrchestrator`**. **`MockSignalEmitter`** and **`MockProtocolController`** are demo contracts so the full path can be tried on testnet without wiring a real protocol.
+The goal is simple: make it easy to run **reliable on-chain automation** using Somnia Reactivity, without every team rebuilding the same infrastructure from scratch.
 
-The default subscription set registers **HealthSignal** and **MetricSignal** on the mock emitter (explicit event topics), plus **BlockTick**, **EpochTick**, and a one-off **Schedule**. Block, epoch, and schedule use direct precompile **`subscribe`** where `@somnia-chain/reactivity` v0.1.10 refuses the precompile address as `emitter` in `createSoliditySubscription`. **Jobs** and **alerts** in the registry add a second filter (emitter, `topic0`, trigger type, cooldowns). Reactive execution needs **both** a subscription that delivers the event **and** a registry rule that matches it.
+## 🚀 What You Built
 
----
+**Somnia Autopilot** gives users a complete loop:
 
-## Repository layout
+- define **workflows** (what to execute),
+- define **jobs and alerts** (when to execute),
+- connect reactive events and system ticks,
+- monitor results from one interface.
 
-| Path | Package | Description |
-|------|---------|-------------|
-| `contracts/` | `@somnia-autopilot/contracts` | Hardhat, five contracts, deploy / `setup-subscriptions` / seed / demo scripts. Outputs `deployments/latest.json`. |
-| `sdk/` | `@somnia-autopilot/sdk` | TypeScript helpers for reactivity setup and scripts (`npm run sdk:build`). API details: **`technicals.md`**. |
-| `app/` | `@somnia-autopilot/app` | RainbowKit + wagmi dashboard: workflows, jobs, alerts, charts, run timeline, in-app **Guide**. Layout targets desktop; viewports under ~1024px show a full-screen “use a larger screen” message. |
+It is designed for practical automation use cases like scheduled actions, event-driven triggers, and recurring health checks.
 
----
+## ⚙️ How It Works
 
-## Quick start
+**Label: Event delivery**
+- Subscriptions route matching Somnia events and system ticks into your reactive handler.
+
+**Label: Decision layer**
+- The handler checks on-chain rules (jobs and alerts) in the registry to decide what should fire.
+
+**Label: Execution layer**
+- Matched rules trigger workflow execution through the orchestrator, step by step.
+
+**Label: Visibility**
+- Executions and state changes are visible in the dashboard for operators and developers.
+
+## 🧩 Project Components
+
+| Component | Path | Purpose |
+|---|---|---|
+| **Contracts** | `contracts/` | Core automation logic: registry, handler, orchestrator, and demo contracts for testnet flow. |
+| **SDK** | `sdk/` | `@somnia-autopilot/sdk` helpers for client setup, reactivity subscriptions, and developer scripts. |
+| **Dashboard** | `app/` | UI to create/manage workflows, jobs, alerts, and track runs in real time. |
+
+## 🛠️ SDK in Plain Terms
+
+The SDK is the developer entry point for integrating this automation system in scripts and backend tools.
+
+With it, developers can:
+- bootstrap clients quickly,
+- register and manage reactivity subscriptions,
+- connect deployed addresses and manifests,
+- orchestrate automation setup without dealing directly with low-level reactivity wiring each time.
+
+For detailed API-level usage, see **`technicals.md`**.
+
+## 📊 Dashboard Experience
+
+The dashboard provides a management layer over the contracts:
+- create and edit workflows,
+- create and edit jobs and alerts,
+- inspect execution history and outcomes,
+- monitor system behavior from one place.
+
+This makes the platform usable not only by protocol engineers, but also by operators running day-to-day automation.
+
+## 🧪 Quick Start
 
 ```bash
 npm install
 npm run sdk:build
 ```
 
-Configure `contracts/.env`, then `npm run contracts:deploy`, `npm run contracts:setup-subscriptions`, sync contract addresses into `app/.env`, and `npm run dev`. See **[SETUP.md](./SETUP.md)** for the full sequence and **[technicals.md](./technicals.md)** for commands and environment tables.
+Then follow the setup flow in **[SETUP.md](./SETUP.md)**:
+- configure environment,
+- deploy contracts,
+- set up subscriptions,
+- run the dashboard.
 
----
+## 📚 Documentation Guide
 
-## External documentation
+- **`README.md`** (this file): high-level product overview.
+- **[SETUP.md](./SETUP.md)**: setup and deployment flow.
+- **[technicals.md](./technicals.md)**: technical internals, commands, and deeper implementation notes.
 
-- [What is reactivity?](https://docs.somnia.network/developer/reactivity/what-is-reactivity)  
-- [Solidity on-chain reactivity tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial)  
+## 🔗 Somnia References
+
+- [What is Reactivity?](https://docs.somnia.network/developer/reactivity/what-is-reactivity)
+- [Solidity on-chain reactivity tutorial](https://docs.somnia.network/developer/reactivity/tutorials/solidity-on-chain-reactivity-tutorial)
 - [Gas configuration](https://docs.somnia.network/developer/reactivity/gas-configuration)
