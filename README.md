@@ -2,6 +2,20 @@
 
 Hackathon-ready **chain-native automation** demo: scheduler-style triggers (Schedule / BlockTick / EpochTick), **alert rules** on contract events, and a **multi-step workflow orchestrator**—wired to **Somnia Reactivity** via `ReactiveAutopilotHandler`.
 
+### What is “real” on-chain vs mock?
+
+| Layer | Real deployed contracts? | What happens |
+|-------|---------------------------|--------------|
+| **AutomationRegistry** | Yes | Stores jobs and alerts; **`recordJobExecution`** / **`recordAlertTrigger`** update counters when the handler reports a run. |
+| **ReactiveAutopilotHandler** | Yes | Somnia calls **`onEvent`** (only from the reactivity precompile). It matches jobs/alerts, runs workflows, and updates the registry. **`JobTriggered`** / **`AlertRaised`** (and related) events fire from this contract. |
+| **WorkflowOrchestrator** | Yes | **`executeWorkflow`** does real **`call`**s to each step’s `target` with your calldata; successes/failures and **`WorkflowExecuted`** / step events are real. |
+| **MockSignalEmitter** | Stand-in | Only **pretends** to be an external protocol emitting events. The **emission and logs are real**; the **business meaning** is fake. |
+| **MockProtocolController** | Stand-in | **Real contract code**, but it only toggles counters / emits demo events instead of talking to Aave, etc. Workflows that point at it **really execute** those calls. |
+
+So: **orchestration, registry accounting, and handler logic are genuine.** The **only “fake” pieces** are the *pretend protocol* contracts you wire in for the demo. After you run **`setup:subscriptions`**, **Schedule / BlockTick / and mock-emitter events** can invoke the handler on testnet the same as production would—subject to Somnia reactivity, gas, and balances.
+
+The app uses **[RainbowKit](https://www.rainbowkit.com)** on **[wagmi v2](https://wagmi.sh)** for the connect modal (MetaMask, WalletConnect, injected wallets, etc.). Add a free **`VITE_WALLETCONNECT_PROJECT_ID`** from [Reown Cloud](https://cloud.reown.com) in `app/.env` so WalletConnect and the full modal work reliably; reads still use **`VITE_RPC_URL`**.
+
 ## Monorepo layout
 
 | Package | Role |
@@ -14,7 +28,7 @@ Hackathon-ready **chain-native automation** demo: scheduler-style triggers (Sche
 
 - Node.js 20+
 - A funded Somnia testnet account (see [Somnia reactivity docs](https://docs.somnia.network/developer/reactivity/quickstart) for balance / gas notes)
-- Optional: MetaMask (or any injected wallet) on the same chain as `VITE_CHAIN_ID`
+- A browser wallet (e.g. MetaMask) and a **Reown (WalletConnect) project ID** for RainbowKit (`VITE_WALLETCONNECT_PROJECT_ID` in `app/.env`)
 
 ## 1. Install
 
@@ -80,6 +94,7 @@ cd contracts && npx hardhat run scripts/emitViteEnv.ts --network hardhatMainnet 
 Copy `app/.env.example` → `app/.env` (or merge `.env.contracts` into it) and set:
 
 - `VITE_RPC_URL` — **public** RPC (can match `SOMNIA_RPC_URL`)
+- `VITE_WALLETCONNECT_PROJECT_ID` — from [Reown Cloud](https://cloud.reown.com) (RainbowKit / WalletConnect)
 - `VITE_CHAIN_ID` — same as `SOMNIA_CHAIN_ID`
 - `VITE_EXPLORER_BASE_URL` — block explorer base (optional, for links)
 - All `VITE_*_ADDRESS` values from the sync output

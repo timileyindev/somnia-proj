@@ -13,14 +13,14 @@ import {
   YAxis,
 } from 'recharts'
 import {
-  AlertTriangle,
   BellRing,
   Clock3,
+  ListOrdered,
   Pencil,
   Plus,
   RefreshCcw,
-  Rocket,
   Search,
+  Wrench,
   Zap,
 } from 'lucide-react'
 import {
@@ -30,11 +30,15 @@ import {
   reactiveHandlerAbi,
   workflowOrchestratorAbi,
 } from './abis'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useAccount } from 'wagmi'
 import { appConfig, hasCoreAddresses } from './config'
 import { Drawer } from './components/Drawer'
+import { ErrorToast } from './components/ErrorToast'
 import { RunTimeline } from './components/RunTimeline'
 import { StatCard } from './components/StatCard'
 import { StatusBadge } from './components/StatusBadge'
+import { useEthersSigner } from './hooks/useEthersSigner'
 
 type Job = {
   id: bigint
@@ -167,8 +171,10 @@ function createContracts(
 }
 
 function App() {
-  const [account, setAccount] = useState<string | null>(null)
-  const [signer, setSigner] = useState<ethers.Signer | null>(null)
+  const { status, address, chainId } = useAccount()
+  const signer = useEthersSigner()
+  const account = status === 'connected' ? address ?? null : null
+
   const [jobs, setJobs] = useState<Job[]>([])
   const [alertRules, setAlertRules] = useState<AlertRule[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -232,8 +238,11 @@ function App() {
     if (!signer || !hasCoreAddresses()) {
       return null
     }
+    if (status !== 'connected' || chainId !== appConfig.chainId) {
+      return null
+    }
     return createContracts(signer)
-  }, [signer])
+  }, [signer, status, chainId])
 
   const refreshDashboard = useCallback(async () => {
     if (!readContracts) {
@@ -294,32 +303,6 @@ function App() {
     },
     [refreshDashboard],
   )
-
-  const connectWallet = useCallback(async () => {
-    const injected = (window as Window & { ethereum?: ethers.Eip1193Provider })
-      .ethereum
-    if (!injected) {
-      setError('No wallet found. Install MetaMask or another injected wallet.')
-      return
-    }
-
-    const browserProvider = new ethers.BrowserProvider(injected)
-    await browserProvider.send('eth_requestAccounts', [])
-    const nextSigner = await browserProvider.getSigner()
-    const nextAccount = await nextSigner.getAddress()
-
-    const network = await browserProvider.getNetwork()
-    if (Number(network.chainId) !== appConfig.chainId) {
-      setError(
-        `Connected chain ${network.chainId.toString()} differs from configured chain ${appConfig.chainId}.`,
-      )
-    } else {
-      setError(null)
-    }
-
-    setSigner(nextSigner)
-    setAccount(nextAccount)
-  }, [])
 
   const createDefaultWorkflow = useCallback(async () => {
     if (!writeContracts || !writeContracts.protocolController) {
@@ -686,13 +669,15 @@ function App() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-indigo-300">
-                Automation & Infrastructure
+                On-chain automation
               </p>
               <h1 className="mt-2 text-3xl font-bold md:text-4xl">
-                {appConfig.appName} Dashboard
+                {appConfig.appName}
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-300">
-                Scheduler + Alerts + Cross-contract orchestrator with real-time analytics.
+                Define <strong className="font-medium text-slate-200">what to run</strong> (a
+                workflow), then <strong className="font-medium text-slate-200">when to run it</strong>{' '}
+                (a job or alert). The tables below show everything that exists on-chain.
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
                 <span className="rounded-full border border-slate-700 px-2 py-1">
@@ -713,20 +698,14 @@ function App() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <button
-                type="button"
-                onClick={connectWallet}
-                className="rounded-lg border border-indigo-400/40 bg-indigo-500/20 px-4 py-2 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30"
-              >
-                {account ? `Connected: ${shortAddress(account)}` : 'Connect Wallet'}
-              </button>
+              <ConnectButton chainStatus="icon" showBalance={false} />
               <button
                 type="button"
                 onClick={() => void refreshDashboard()}
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-200 transition hover:bg-slate-800"
               >
                 <RefreshCcw className="h-3.5 w-3.5" />
-                Refresh
+                Refresh data
               </button>
             </div>
           </div>
@@ -740,110 +719,190 @@ function App() {
               .
             </div>
           ) : null}
-          {error ? (
-            <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          ) : null}
         </header>
 
+        <section className="rounded-xl border border-indigo-500/25 bg-indigo-950/15 p-4 md:p-5">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-indigo-200">
+            <ListOrdered className="h-4 w-4 shrink-0" />
+            How to use this dashboard
+          </h2>
+          <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-300 marker:text-indigo-400">
+            <li>
+              <span className="text-slate-200">Connect your wallet</span> using the RainbowKit button
+              (top right). Pick MetaMask, WalletConnect, or another option from the modal. Switch
+              network if prompted. You need a wallet to create or change anything on-chain.
+            </li>
+            <li>
+              <span className="text-slate-200">Create a workflow</span> — the ordered list of contract
+              calls to execute. Use the sample button first if you are exploring.
+            </li>
+            <li>
+              <span className="text-slate-200">Add a job or an alert</span> and set its workflow ID
+              to the one you just created. A <strong className="font-medium text-slate-200">job</strong>{' '}
+              reacts to time/ticks/events; an <strong className="font-medium text-slate-200">alert</strong>{' '}
+              reacts when event data crosses a number you choose.
+            </li>
+            <li>
+              <span className="text-slate-200">Fire a test</span> with “Send test signals” (demo only)
+              or rely on real Somnia subscriptions + on-chain events in production.
+            </li>
+          </ol>
+        </section>
+
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Processed Events" value={bigintToString(processedEvents)} />
-          <StatCard label="Active Jobs" value={analytics.activeJobs.toString()} />
-          <StatCard label="Active Alerts" value={analytics.activeAlerts.toString()} />
           <StatCard
-            label="Workflow run success rate"
+            label="Handler runs"
+            value={bigintToString(processedEvents)}
+            hint="How often the reactive handler processed an event"
+          />
+          <StatCard label="Active jobs" value={analytics.activeJobs.toString()} />
+          <StatCard label="Active alerts" value={analytics.activeAlerts.toString()} />
+          <StatCard
+            label="Workflow success rate"
             value={analytics.workflowSuccessRate}
-            hint={`${analytics.runSuccesses} success / ${analytics.runFailures} failures (orchestrator)`}
+            hint={`${analytics.runSuccesses} ok / ${analytics.runFailures} failed`}
           />
           <StatCard
-            label="Job execution success rate"
+            label="Job run success rate"
             value={analytics.jobExecutionSuccessRate}
-            hint={`Registry-tracked runs (${bigintToString(analytics.jobRuns)} total)`}
+            hint={`From registry (${bigintToString(analytics.jobRuns)} total)`}
           />
           <StatCard
-            label="Total Workflow Runs"
+            label="Workflow runs"
             value={analytics.totalRuns.toString()}
-            hint={`Across ${analytics.totalWorkflows} workflows`}
+            hint={`${analytics.totalWorkflows} workflow(s)`}
           />
           <StatCard
-            label="Tracked Job Executions"
+            label="Job runs (registry)"
             value={bigintToString(analytics.jobRuns)}
-            hint={isLoading ? 'Refreshing...' : 'Auto-refresh every 12s'}
+            hint={isLoading ? 'Refreshing…' : 'Refreshes every 12s'}
           />
           <StatCard
-            label="Wallet"
-            value={account ? shortAddress(account) : 'not connected'}
-            hint={pendingAction ? `Pending: ${pendingAction}` : 'Connect for write actions'}
+            label="Your wallet"
+            value={account ? shortAddress(account) : 'Not connected'}
+            hint={pendingAction ? `Working: ${pendingAction}` : 'Required for buttons below'}
           />
           <StatCard
-            label="Explorer"
-            value={appConfig.explorerBaseUrl ? 'configured' : 'not set'}
-            hint={appConfig.explorerBaseUrl ?? 'Set VITE_EXPLORER_BASE_URL'}
+            label="Block explorer"
+            value={appConfig.explorerBaseUrl ? 'Set' : 'Not set'}
+            hint={appConfig.explorerBaseUrl ?? 'VITE_EXPLORER_BASE_URL'}
           />
         </section>
 
         <section className="grid gap-4 lg:grid-cols-3">
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
-              <Rocket className="h-4 w-4 text-indigo-300" />
-              Automation Controls
+            <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+              <Wrench className="h-4 w-4 text-amber-300" />
+              What do you want to do?
             </h2>
-            <div className="grid gap-2">
-              <button
-                type="button"
-                onClick={createDefaultWorkflow}
-                className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-left text-sm transition hover:bg-indigo-500/20"
-              >
-                Create Default Workflow
-              </button>
-              <button
-                type="button"
-                onClick={emitDemoSignal}
-                className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-left text-sm transition hover:bg-blue-500/20"
-              >
-                Emit Demo Signals
-              </button>
-              <button
-                type="button"
-                onClick={openNewJobDrawer}
-                className="inline-flex items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-left text-sm transition hover:bg-violet-500/20"
-              >
-                <Plus className="h-4 w-4" />
-                New automation job
-              </button>
-              <button
-                type="button"
-                onClick={openNewAlertDrawer}
-                className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-left text-sm transition hover:bg-emerald-500/20"
-              >
-                <Plus className="h-4 w-4" />
-                New alert rule
-              </button>
-              <div className="flex gap-2">
-                <input
-                  value={manualJobId}
-                  onChange={(event) => setManualJobId(event.target.value)}
-                  placeholder="Job ID"
-                  className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-                />
+            <p className="mb-4 text-xs text-slate-500">
+              Buttons are grouped by purpose. Start from the top if you are new here.
+            </p>
+
+            <div className="flex flex-col gap-5">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  1 · Workflows
+                </p>
+                <p className="mb-2 text-xs text-slate-500">
+                  A workflow is the script: which contracts to call, in order, when something triggers.
+                </p>
                 <button
                   type="button"
-                  onClick={runManualJob}
-                  className="flex-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm transition hover:bg-emerald-500/20"
+                  onClick={createDefaultWorkflow}
+                  className="w-full rounded-lg border border-indigo-500/35 bg-indigo-500/15 px-3 py-2.5 text-left text-sm font-medium text-indigo-100 transition hover:bg-indigo-500/25"
                 >
-                  Manual Trigger
+                  Create sample workflow (3 demo steps)
                 </button>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  2 · Rules (jobs &amp; alerts)
+                </p>
+                <p className="mb-2 text-xs text-slate-500">
+                  Point each rule at a workflow ID from the tables below (usually 1 after you create the
+                  sample).
+                </p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={openNewJobDrawer}
+                    className="inline-flex w-full items-center gap-2 rounded-lg border border-violet-500/35 bg-violet-500/15 px-3 py-2.5 text-left text-sm font-medium text-violet-100 transition hover:bg-violet-500/25"
+                  >
+                    <Plus className="h-4 w-4 shrink-0" />
+                    Add job — when to run a workflow
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openNewAlertDrawer}
+                    className="inline-flex w-full items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-3 py-2.5 text-left text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/25"
+                  >
+                    <Plus className="h-4 w-4 shrink-0" />
+                    Add alert — when a number in an event crosses a limit
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  3 · Try the demo
+                </p>
+                <p className="mb-2 text-xs text-slate-500">
+                  Pretends the mock protocol sent health and metric events so you can see the pipeline
+                  move (if your on-chain setup is wired for it).
+                </p>
+                <button
+                  type="button"
+                  onClick={emitDemoSignal}
+                  className="w-full rounded-lg border border-sky-500/35 bg-sky-500/15 px-3 py-2.5 text-left text-sm font-medium text-sky-100 transition hover:bg-sky-500/25"
+                >
+                  Send test signals (mock protocol)
+                </button>
+              </div>
+
+              <div className="rounded-lg border border-slate-700/80 bg-slate-950/50 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-500/90">
+                  Advanced · manual run
+                </p>
+                <p className="mb-2 text-xs text-slate-500">
+                  Runs one job by ID through the handler, <strong className="text-slate-400">only</strong>{' '}
+                  if your connected wallet is the <strong className="text-slate-400">owner</strong> of
+                  the reactive handler (typically the deployer).
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="grid gap-1">
+                    <label htmlFor="manual-job-id" className="text-xs font-medium text-slate-400">
+                      Job ID
+                    </label>
+                    <input
+                      id="manual-job-id"
+                      value={manualJobId}
+                      onChange={(event) => setManualJobId(event.target.value)}
+                      placeholder="1"
+                      className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={runManualJob}
+                    className="flex-1 rounded-lg border border-amber-600/40 bg-amber-950/40 px-3 py-2 text-sm font-medium text-amber-100 transition hover:bg-amber-900/50"
+                  >
+                    Run this job now (owner wallet)
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 lg:col-span-2">
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
+            <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
               <Zap className="h-4 w-4 text-cyan-300" />
-              Run Outcomes (latest 12)
+              Recent workflow runs
             </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Last 12 runs: 1 = succeeded, 0 = failed (from the orchestrator).
+            </p>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={runChartData}>
@@ -886,10 +945,13 @@ function App() {
 
         <section className="grid gap-4 xl:grid-cols-2">
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
+            <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
               <Clock3 className="h-4 w-4 text-indigo-300" />
-              Job Reliability Snapshot
+              Job success vs failures
             </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Per job: how many handler runs succeeded vs failed (from the registry).
+            </p>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={jobChartData}>
@@ -911,10 +973,13 @@ function App() {
             </div>
           </div>
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-            <h2 className="mb-3 flex items-center gap-2 text-base font-semibold">
+            <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
               <BellRing className="h-4 w-4 text-violet-300" />
-              Execution timeline
+              Run history (newest first)
             </h2>
+            <p className="mb-3 text-xs text-slate-500">
+              Same data as “Recent runs”, shown as a timeline.
+            </p>
             <RunTimeline runs={runs} formatTime={formatTimestamp} />
           </div>
         </section>
@@ -922,7 +987,10 @@ function App() {
         <section className="grid gap-4 xl:grid-cols-2">
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold">Jobs</h2>
+              <div>
+                <h2 className="text-base font-semibold">Jobs</h2>
+                <p className="text-xs text-slate-500">When each job fires, it runs its workflow.</p>
+              </div>
               <div className="relative max-w-xs flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 <input
@@ -1004,7 +1072,10 @@ function App() {
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold">Alert Rules</h2>
+              <div>
+                <h2 className="text-base font-semibold">Alerts</h2>
+                <p className="text-xs text-slate-500">Threshold checks on event data → workflow.</p>
+              </div>
               <div className="relative max-w-xs flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 <input
@@ -1088,7 +1159,10 @@ function App() {
         <section className="grid gap-4 xl:grid-cols-2">
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold">Workflows</h2>
+              <div>
+                <h2 className="text-base font-semibold">Workflows</h2>
+                <p className="text-xs text-slate-500">Ordered contract calls (the “what runs”).</p>
+              </div>
               <div className="relative max-w-xs flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 <input
@@ -1170,7 +1244,10 @@ function App() {
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="mb-0 text-base font-semibold">Recent Runs</h2>
+              <div>
+                <h2 className="text-base font-semibold">Recent runs</h2>
+                <p className="text-xs text-slate-500">Each line is one orchestrator execution.</p>
+              </div>
               <div className="relative max-w-xs flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 <input
@@ -1236,83 +1313,155 @@ function App() {
             setJobDrawerOpen(false)
             setEditingJobId(null)
           }}
-          title={editingJobId ? `Edit job #${editingJobId.toString()}` : 'New automation job'}
+          title={
+            editingJobId
+              ? `Edit job #${editingJobId.toString()}`
+              : 'Add job — when to run a workflow'
+          }
         >
-          <form onSubmit={(e) => void submitJobDrawer(e)} className="grid gap-2">
-            <input
-              value={jobForm.name}
-              onChange={(event) =>
-                setJobForm((prev) => ({ ...prev, name: event.target.value }))
-              }
-              placeholder="Job name"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <select
-              value={jobForm.triggerType}
-              onChange={(event) =>
-                setJobForm((prev) => ({
-                  ...prev,
-                  triggerType: event.target.value,
-                }))
-              }
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            >
-              <option value="0">Schedule</option>
-              <option value="1">Block Tick</option>
-              <option value="2">Epoch Tick</option>
-              <option value="3">External Event</option>
-            </select>
-            <input
-              value={jobForm.emitter}
-              onChange={(event) =>
-                setJobForm((prev) => ({ ...prev, emitter: event.target.value }))
-              }
-              placeholder="Emitter address"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={jobForm.topic0}
-              onChange={(event) =>
-                setJobForm((prev) => ({ ...prev, topic0: event.target.value }))
-              }
-              placeholder="Topic0 (or 0x00...)"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={jobForm.workflowId}
-              onChange={(event) =>
-                setJobForm((prev) => ({ ...prev, workflowId: event.target.value }))
-              }
-              placeholder="Workflow ID"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={jobForm.cooldownSeconds}
-              onChange={(event) =>
-                setJobForm((prev) => ({
-                  ...prev,
-                  cooldownSeconds: event.target.value,
-                }))
-              }
-              placeholder="Cooldown (s)"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={jobForm.triggerValue}
-              onChange={(event) =>
-                setJobForm((prev) => ({
-                  ...prev,
-                  triggerValue: event.target.value,
-                }))
-              }
-              placeholder="Trigger value (schedule / tick id)"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
+          <p className="mb-3 text-xs text-slate-500">
+            Choose trigger type (time/tick/event), then the workflow ID to execute. External events need
+            the emitter contract and event topic.
+          </p>
+          <form onSubmit={(e) => void submitJobDrawer(e)} className="grid gap-3">
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-name" className="text-xs font-medium text-slate-300">
+                Job name
+              </label>
+              <p className="text-xs text-slate-500">Label for you in the dashboard only.</p>
+              <input
+                id="job-drawer-name"
+                value={jobForm.name}
+                onChange={(event) =>
+                  setJobForm((prev) => ({ ...prev, name: event.target.value }))
+                }
+                placeholder="e.g. Health signal trigger"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-trigger-type" className="text-xs font-medium text-slate-300">
+                Trigger type
+              </label>
+              <p className="text-xs text-slate-500">
+                What on-chain condition starts this workflow (time, ticks, or a specific event).
+              </p>
+              <select
+                id="job-drawer-trigger-type"
+                value={jobForm.triggerType}
+                onChange={(event) =>
+                  setJobForm((prev) => ({
+                    ...prev,
+                    triggerType: event.target.value,
+                  }))
+                }
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              >
+                <option value="0">One-off scheduled time (chain callback)</option>
+                <option value="1">Every block (or specific block tick)</option>
+                <option value="2">Epoch tick (recurring time buckets)</option>
+                <option value="3">When a contract emits an event (you set emitter + topic)</option>
+              </select>
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-emitter" className="text-xs font-medium text-slate-300">
+                Emitter contract
+              </label>
+              <p className="text-xs text-slate-500">
+                For event-based triggers: the contract that emits the log. For time/tick triggers, use the
+                value your registry expects (often the mock emitter or a placeholder).
+              </p>
+              <input
+                id="job-drawer-emitter"
+                value={jobForm.emitter}
+                onChange={(event) =>
+                  setJobForm((prev) => ({ ...prev, emitter: event.target.value }))
+                }
+                placeholder="0x… check address"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-topic0" className="text-xs font-medium text-slate-300">
+                Event topic0 (keccak hash)
+              </label>
+              <p className="text-xs text-slate-500">
+                First topic of the log to match; use <span className="font-mono">0x00…</span> or leave
+                per contract docs for non-event triggers.
+              </p>
+              <input
+                id="job-drawer-topic0"
+                value={jobForm.topic0}
+                onChange={(event) =>
+                  setJobForm((prev) => ({ ...prev, topic0: event.target.value }))
+                }
+                placeholder="0x…"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-workflow-id" className="text-xs font-medium text-slate-300">
+                Workflow ID
+              </label>
+              <p className="text-xs text-slate-500">
+                Numeric ID from the Workflows table — the script to run when this job fires.
+              </p>
+              <input
+                id="job-drawer-workflow-id"
+                value={jobForm.workflowId}
+                onChange={(event) =>
+                  setJobForm((prev) => ({ ...prev, workflowId: event.target.value }))
+                }
+                placeholder="e.g. 1"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-cooldown" className="text-xs font-medium text-slate-300">
+                Cooldown (seconds)
+              </label>
+              <p className="text-xs text-slate-500">
+                Minimum seconds between runs; use <span className="font-mono">0</span> for no wait.
+              </p>
+              <input
+                id="job-drawer-cooldown"
+                value={jobForm.cooldownSeconds}
+                onChange={(event) =>
+                  setJobForm((prev) => ({
+                    ...prev,
+                    cooldownSeconds: event.target.value,
+                  }))
+                }
+                placeholder="e.g. 30"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="job-drawer-trigger-value" className="text-xs font-medium text-slate-300">
+                Trigger value / filter
+              </label>
+              <p className="text-xs text-slate-500">
+                Extra numeric filter: schedule or tick id, or <span className="font-mono">0</span> to
+                match any for that trigger type.
+              </p>
+              <input
+                id="job-drawer-trigger-value"
+                value={jobForm.triggerValue}
+                onChange={(event) =>
+                  setJobForm((prev) => ({
+                    ...prev,
+                    triggerValue: event.target.value,
+                  }))
+                }
+                placeholder="e.g. 0"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              />
+            </div>
             <button
               type="submit"
               className="mt-2 rounded-lg border border-indigo-500/30 bg-indigo-500/20 px-3 py-2 text-sm font-medium transition hover:bg-indigo-500/30"
             >
-              {editingJobId ? 'Update job' : 'Create job'}
+              {editingJobId ? 'Save changes' : 'Create job on-chain'}
             </button>
           </form>
         </Drawer>
@@ -1326,68 +1475,116 @@ function App() {
           title={
             editingAlertId
               ? `Edit alert #${editingAlertId.toString()}`
-              : 'New alert rule'
+              : 'Add alert — when event data crosses a limit'
           }
         >
-          <form onSubmit={(e) => void submitAlertDrawer(e)} className="grid gap-2">
-            <input
-              value={alertForm.name}
-              onChange={(event) =>
-                setAlertForm((prev) => ({ ...prev, name: event.target.value }))
-              }
-              placeholder="Alert name"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={alertForm.emitter}
-              onChange={(event) =>
-                setAlertForm((prev) => ({ ...prev, emitter: event.target.value }))
-              }
-              placeholder="Emitter address"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={alertForm.topic0}
-              onChange={(event) =>
-                setAlertForm((prev) => ({ ...prev, topic0: event.target.value }))
-              }
-              placeholder="Topic0"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
-            <div className="grid grid-cols-2 gap-2">
+          <p className="mb-3 text-xs text-slate-500">
+            Watches an event on an emitter. The handler reads the first 32-byte number in the event
+            data and compares it to your minimum; if it passes, it can run the workflow.
+          </p>
+          <form onSubmit={(e) => void submitAlertDrawer(e)} className="grid gap-3">
+            <div className="grid gap-1">
+              <label htmlFor="alert-drawer-name" className="text-xs font-medium text-slate-300">
+                Alert name
+              </label>
+              <p className="text-xs text-slate-500">Label for you in the dashboard only.</p>
               <input
-                value={alertForm.minValue}
+                id="alert-drawer-name"
+                value={alertForm.name}
                 onChange={(event) =>
-                  setAlertForm((prev) => ({ ...prev, minValue: event.target.value }))
+                  setAlertForm((prev) => ({ ...prev, name: event.target.value }))
                 }
-                placeholder="Min value (first data word)"
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-              />
-              <input
-                value={alertForm.workflowId}
-                onChange={(event) =>
-                  setAlertForm((prev) => ({ ...prev, workflowId: event.target.value }))
-                }
-                placeholder="Workflow ID"
+                placeholder="e.g. Metric threshold alert"
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
               />
             </div>
-            <input
-              value={alertForm.cooldownSeconds}
-              onChange={(event) =>
-                setAlertForm((prev) => ({
-                  ...prev,
-                  cooldownSeconds: event.target.value,
-                }))
-              }
-              placeholder="Cooldown (s)"
-              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-            />
+            <div className="grid gap-1">
+              <label htmlFor="alert-drawer-emitter" className="text-xs font-medium text-slate-300">
+                Emitter contract
+              </label>
+              <p className="text-xs text-slate-500">Address of the contract whose events you are watching.</p>
+              <input
+                id="alert-drawer-emitter"
+                value={alertForm.emitter}
+                onChange={(event) =>
+                  setAlertForm((prev) => ({ ...prev, emitter: event.target.value }))
+                }
+                placeholder="0x…"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="alert-drawer-topic0" className="text-xs font-medium text-slate-300">
+                Event topic0 (keccak hash)
+              </label>
+              <p className="text-xs text-slate-500">Must match the event signature hash for the log you care about.</p>
+              <input
+                id="alert-drawer-topic0"
+                value={alertForm.topic0}
+                onChange={(event) =>
+                  setAlertForm((prev) => ({ ...prev, topic0: event.target.value }))
+                }
+                placeholder="0x…"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid gap-1">
+                <label htmlFor="alert-drawer-min-value" className="text-xs font-medium text-slate-300">
+                  Minimum value (uint256)
+                </label>
+                <p className="text-xs text-slate-500">
+                  Handler compares the first 32-byte word in event data; fire when observed ≥ this.
+                </p>
+                <input
+                  id="alert-drawer-min-value"
+                  value={alertForm.minValue}
+                  onChange={(event) =>
+                    setAlertForm((prev) => ({ ...prev, minValue: event.target.value }))
+                  }
+                  placeholder="e.g. 800"
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="alert-drawer-workflow-id" className="text-xs font-medium text-slate-300">
+                  Workflow ID
+                </label>
+                <p className="text-xs text-slate-500">Workflow to run when the threshold is met.</p>
+                <input
+                  id="alert-drawer-workflow-id"
+                  value={alertForm.workflowId}
+                  onChange={(event) =>
+                    setAlertForm((prev) => ({ ...prev, workflowId: event.target.value }))
+                  }
+                  placeholder="e.g. 1"
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="grid gap-1">
+              <label htmlFor="alert-drawer-cooldown" className="text-xs font-medium text-slate-300">
+                Cooldown (seconds)
+              </label>
+              <p className="text-xs text-slate-500">Minimum time between firing this alert again.</p>
+              <input
+                id="alert-drawer-cooldown"
+                value={alertForm.cooldownSeconds}
+                onChange={(event) =>
+                  setAlertForm((prev) => ({
+                    ...prev,
+                    cooldownSeconds: event.target.value,
+                  }))
+                }
+                placeholder="e.g. 30"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+              />
+            </div>
             <button
               type="submit"
               className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/20 px-3 py-2 text-sm font-medium transition hover:bg-emerald-500/30"
             >
-              {editingAlertId ? 'Update alert' : 'Create alert'}
+              {editingAlertId ? 'Save changes' : 'Create alert on-chain'}
             </button>
           </form>
         </Drawer>
@@ -1397,8 +1594,8 @@ function App() {
           onClose={() => setStepsDrawerWorkflowId(null)}
           title={
             stepsDrawerWorkflowId
-              ? `Workflow #${stepsDrawerWorkflowId.toString()} steps`
-              : 'Steps'
+              ? `Workflow #${stepsDrawerWorkflowId.toString()} — steps`
+              : 'Workflow steps'
           }
         >
           {stepsLoading ? (
@@ -1420,6 +1617,8 @@ function App() {
           )}
         </Drawer>
       </main>
+
+      <ErrorToast message={error} onDismiss={() => setError(null)} />
     </div>
   )
 }
