@@ -1,0 +1,45 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ringGrad" x1="40" y1="40" x2="280" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="128" y1="92" x2="188" y2="216" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A5B4FC"/>
+      <stop offset="1" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon -->
+  <g transform="translate(24,24)">
+    <!-- Outer orbit -->
+    <circle cx="136" cy="136" r="108" stroke="url(#ringGrad)" stroke-width="16"/>
+
+    <!-- Rotated inner orbit -->
+    <ellipse cx="136" cy="136" rx="84" ry="44" transform="rotate(-26 136 136)" stroke="#334155" stroke-width="10"/>
+
+    <!-- Orbit nodes -->
+    <circle cx="66" cy="82" r="10" fill="#22D3EE"/>
+    <circle cx="206" cy="190" r="10" fill="#6366F1"/>
+    <circle cx="198" cy="76" r="8" fill="#A5B4FC"/>
+
+    <!-- Autopilot bolt/pulse -->
+    <path d="M150 70L98 150H140L122 204L178 122H138L150 70Z" fill="url(#boltGrad)"/>
+
+    <!-- Focus dot -->
+    <circle cx="136" cy="136" r="7" fill="#E2E8F0"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(340,84)">
+    <text x="0" y="64" fill="#E2E8F0" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-size="68" font-weight="700" letter-spacing="-1.2">
+      Somnia
+    </text>
+    <text x="2" y="138" fill="#94A3B8" font-family="Inter, Segoe UI, Roboto, Arial, sans-serif" font-size="58" font-weight="600" letter-spacing="-0.8">
+      Autopilot
+    </text>
+
+    <!-- Accent line -->
+    <rect x="4" y="164" width="390" height="8" rx="4" fill="url(#ringGrad)"/>
+  </g>
+</svg>

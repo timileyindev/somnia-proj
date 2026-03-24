@@ -1,8 +1,12 @@
 # Somnia Autopilot
 
+![Somnia Autopilot Logo](./app/public/somnia-autopilot-logo.svg)
+
 Somnia Autopilot is an **on-chain automation platform for the Somnia network**.
 
 It provides a complete automation stack where teams can define **what should run** (workflows), **when it should run** (jobs and alerts), and **how it should be monitored** (dashboard + run history), all on top of Somnia Reactivity.
+
+**🌐 Deployed Dashboard:** [https://somnia-autopilot.vercel.app/](https://somnia-autopilot.vercel.app/)
 
 The project is organized into three core parts:
 - a Solidity automation core (`AutomationRegistry`, `ReactiveAutopilotHandler`, `WorkflowOrchestrator`),

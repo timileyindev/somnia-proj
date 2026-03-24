@@ -899,7 +899,12 @@ function App() {
         <header className="rounded-2xl border border-slate-800 bg-gradient-to-br from-indigo-900/50 via-slate-900 to-slate-950 p-6 shadow-2xl shadow-black/30">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-indigo-300">
+              <img
+                src="/somnia-autopilot-logo.svg"
+                alt="Somnia Autopilot"
+                className="h-11 w-auto rounded-md border border-slate-700/70 bg-slate-900/60 p-1"
+              />
+              <p className="mt-3 text-sm uppercase tracking-[0.2em] text-indigo-300">
                 On-chain automation
               </p>
               <h1 className="mt-2 text-3xl font-bold md:text-4xl">
