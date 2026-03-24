@@ -21,11 +21,12 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom', 'wagmi', 'viem'],
     alias: {
-      react: path.join(appModules, 'react'),
-      'react-dom': path.join(appModules, 'react-dom'),
+      react: resolveDep('react'),
+      'react-dom': resolveDep('react-dom'),
       // RainbowKit is hoisted to root; point wagmi/viem at install locations (workspace layout).
       wagmi: resolveDep('wagmi'),
       viem: resolveDep('viem'),
+      'react-is': resolveDep('react-is'),
     },
   },
   optimizeDeps: {
