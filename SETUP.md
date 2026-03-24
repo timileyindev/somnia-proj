@@ -155,6 +155,7 @@ Open the URL Vite prints (usually `http://localhost:5173`). Connect a wallet on 
 
 ## See also
 
-- [README.md](./README.md) — project overview, “real vs mock”, quality commands  
+- [README.md](./README.md) — high-level product overview, Somnia fit, SDK and dashboard story  
+- [technicals.md](./technicals.md) — architecture, env tables, commands, contract reference  
 - [Somnia Reactivity](https://docs.somnia.network/developer/reactivity/what-is-reactivity)  
 - [Subscriptions](https://docs.somnia.network/developer/reactivity/subscriptions-the-core-primitive)  
