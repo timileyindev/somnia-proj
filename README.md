@@ -113,9 +113,19 @@ This project demonstrates Reactivity as a **practical automation backbone**:
 
 | Component | Path | Purpose |
 |---|---|---|
-| **Contracts** | `contracts/` | Core automation logic: registry, handler, orchestrator, and demo contracts for testnet flow. |
-| **SDK** | `sdk/` | `@somnia-autopilot/sdk` helpers for client setup, reactivity subscriptions, and developer scripts. |
-| **Dashboard** | `app/` | UI to create/manage workflows, jobs, alerts, and track runs in real time. |
+| **Contracts** | `contracts/` | On-chain automation core: stores workflows/jobs/alerts, receives reactivity events, executes workflow steps, and records outcomes. |
+| **SDK** | `sdk/` | `@somnia-autopilot/sdk` for client setup, subscription management, preflight checks, and script-based automation setup. |
+| **Dashboard** | `app/` | Operator UI to create/manage workflows, jobs, alerts, and monitor execution history in real time. |
+
+### Deployed contracts (Somnia testnet)
+
+| Contract | Address | Responsibility |
+|---|---|---|
+| **AutomationRegistry** | `0xe1d12a6c2ecbb96bd34917ae50a8cdb293e71e87` | Source of truth for jobs and alert rules; stores trigger policy, cooldowns, and execution counters/metadata. |
+| **WorkflowOrchestrator** | `0x51ab0b97ac1a0571f9d4ad3505daaf703ea521f8` | Executes workflow steps in order (target + calldata) and tracks run-level success/failure outcomes. |
+| **ReactiveAutopilotHandler** | `0x1f740a68662a8865da728049da167f876d425a41` | Reactivity entrypoint; receives subscribed events, evaluates registry rules, and triggers workflow execution. |
+| **MockProtocolController** | `0x823d2d5080f258e6dd1cb763a766ab4bf2acde8f` | Demo action target used by workflows to simulate protocol operations on testnet. |
+| **MockSignalEmitter** | `0xff45d31246b64a337394f420e82845373ebf905b` | Demo event source used to emit test signals for event-driven automation and alert testing. |
 
 ## 🛠️ SDK in Plain Terms
 
